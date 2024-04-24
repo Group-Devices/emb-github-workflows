@@ -9,6 +9,8 @@ env:
   ARTIFACTORY_TOKEN: ${{ secrets.ARTIFACTORY_TOKEN }}
   NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
   NEXUS_TOKEN: ${{ secrets.NEXUS_TOKEN }}
+  SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
+  SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
 
 jobs:
   generate-conan-context:
@@ -26,25 +28,25 @@ jobs:
         run: |
           ## START GENERATE PYTHON SCRIPT
           cat > extract-conanfile-field.py <<EOF
-          
+
           import importlib.util
           import inspect
           import sys
-          
+
           def load_class(module_name):
             spec = importlib.util.find_spec(module_name)
             if spec is None:
               raise ImportError(f"Module '{module_name}' not found.")
-          
+
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
-          
+
             classes = inspect.getmembers(module, inspect.isclass)
             for name, cls in inspect.getmembers(module, inspect.isclass):
               if cls.__module__ == module_name:
                 return cls
             raise RuntimeError(f"No conan class found matching '{module_name}'")
-          
+
           if __name__ == "__main__":
             field_to_extract = sys.argv[1]
             module_name = "conanfile"
@@ -53,11 +55,11 @@ jobs:
             print(getattr(conan_instance, field_to_extract))
           EOF
           ## END GENERATE PYTHON SCRIPT
-          
+
           user=$(python3 extract-conanfile-field.py user)
-          
+
           CONAN_CONTEXT_URL=https://api.github.com/repos/KUBA-Aurora/${user}-conan-context/contents/conan-context.yml
-          
+
           REF=""
           BRANCH_NAME="${GITHUB_REF_NAME}"
           if [ "$BRANCH_NAME" = "main" ]; then
@@ -68,9 +70,9 @@ jobs:
             echo "Unable to set conan channel"
             exit 1
           fi
-          
+
           mkdir -p .conan-context
-          
+
           curl -H "Authorization: token ${CONAN_GIT_TOKEN}" \
                 -H "Accept: application/vnd.github.v3.raw" \
                 -L "${CONAN_CONTEXT_URL}?ref=${REF}" > .conan-context/conan-context.yml
@@ -150,15 +152,15 @@ jobs:
           conan remote login -p "$ARTIFACTORY_TOKEN" "VOQA-SNAPSHOTS" "$ARTIFACTORY_USERNAME"
           conan remote login -p "$ARTIFACTORY_TOKEN" "VOQA-RELEASES" "$ARTIFACTORY_USERNAME"
       - name: Conan create
-        run: conan create . -pr:h ${{ matrix.profile }} --build=missing -c tools.build:skip_test=True
+        run: SVN_USERNAME=$SVN_USERNAME SVN_PASSWORD=$SVN_PASSWORD conan create . -pr:h ${{ matrix.profile }} --build=missing -c tools.build:skip_test=True
       - name: Conan upload
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
         run: |
           BRANCH_NAME="${GITHUB_REF_NAME}"
           if [ "$BRANCH_NAME" = "main" ]; then
-            conan upload */*@* -r VOQA-SNAPSHOTS --confirm
+            conan upload '*' -r VOQA-SNAPSHOTS --confirm
           elif [ ! -z "$GITHUB_BASE_REF" ]; then
-            conan upload */*@* -r VOQA-RELEASES --confirm
+            conan upload '*' -r VOQA-RELEASES --confirm
           else
             echo "Unable to set conan channel"
             exit 1
