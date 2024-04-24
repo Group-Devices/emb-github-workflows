@@ -152,7 +152,7 @@ jobs:
           conan remote login -p "$ARTIFACTORY_TOKEN" "VOQA-SNAPSHOTS" "$ARTIFACTORY_USERNAME"
           conan remote login -p "$ARTIFACTORY_TOKEN" "VOQA-RELEASES" "$ARTIFACTORY_USERNAME"
       - name: Conan create
-        run: SVN_USERNAME=$SVN_USERNAME SVN_PASSWORD=$SVN_PASSWORD conan create . -pr:h ${{ matrix.profile }} --build=missing -c tools.build:skip_test=True
+        run: conan create . -pr:h ${{ matrix.profile }} --build=missing -c tools.build:skip_test=True
       - name: Conan upload
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
         run: |
