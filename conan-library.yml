@@ -1,0 +1,161 @@
+name: 'Continuous Integration'
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - '*'
+  workflow_call: # to be callable by external pipeline
+
+permissions:
+  contents: read
+  checks: write # to publish test result
+
+env:
+  CONAN_GIT_TOKEN: ${{ secrets.CONAN_GIT_TOKEN }}
+  ARTIFACTORY_USERNAME: ${{ secrets.ARTIFACTORY_USERNAME }}
+  ARTIFACTORY_TOKEN: ${{ secrets.ARTIFACTORY_TOKEN }}
+  NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+  NEXUS_TOKEN: ${{ secrets.NEXUS_TOKEN }}
+
+jobs:
+  generate-conan-context:
+    runs-on: docker-voqa-ubuntu-22-04
+    container:
+      image: docker-internal.it.voqa.com/aurora-compilers:main
+      credentials:
+        username: ${{ secrets.DOCKER_INTERNAL_REGISTRY_USERNAME}}
+        password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate the conan context
+        run: |
+          ## START GENERATE PYTHON SCRIPT
+          cat > extract-conanfile-field.py <<EOF
+          
+          import importlib.util
+          import inspect
+          import sys
+          
+          def load_class(module_name):
+            spec = importlib.util.find_spec(module_name)
+            if spec is None:
+              raise ImportError(f"Module '{module_name}' not found.")
+          
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+          
+            classes = inspect.getmembers(module, inspect.isclass)
+            for name, cls in inspect.getmembers(module, inspect.isclass):
+              if cls.__module__ == module_name:
+                return cls
+            raise RuntimeError(f"No conan class found matching '{module_name}'")
+          
+          if __name__ == "__main__":
+            field_to_extract = sys.argv[1]
+            module_name = "conanfile"
+            conan_class = load_class(module_name)
+            conan_instance = conan_class()
+            print(getattr(conan_instance, field_to_extract))
+          EOF
+          ## END GENERATE PYTHON SCRIPT
+          
+          user=$(python3 extract-conanfile-field.py user)
+          
+          CONAN_CONTEXT_URL=https://api.github.com/repos/KUBA-Aurora/${user}-conan-context/contents/conan-context.yml
+          
+          REF=""
+          BRANCH_NAME="${GITHUB_REF_NAME}"
+          if [ "$BRANCH_NAME" = "main" ]; then
+            REF="main"
+          elif [ ! -z "${GITHUB_BASE_REF}" ]; then
+              REF="${GITHUB_BASE_REF}"
+          else
+            echo "Unable to set conan channel"
+            exit 1
+          fi
+          
+          mkdir -p .conan-context
+          
+          curl -H "Authorization: token ${CONAN_GIT_TOKEN}" \
+                -H "Accept: application/vnd.github.v3.raw" \
+                -L "${CONAN_CONTEXT_URL}?ref=${REF}" > .conan-context/conan-context.yml
+      - name: 'Upload conan context'
+        uses: actions/upload-artifact@v4
+        with:
+          name: conan-context
+          path: .conan-context/conan-context.yml
+  unit-tests:
+    runs-on: docker-voqa-ubuntu-22-04
+    container:
+      image: docker-internal.it.voqa.com/aurora-compilers:main
+      credentials:
+        username: ${{ secrets.DOCKER_INTERNAL_REGISTRY_USERNAME}}
+        password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
+    needs:
+      - generate-conan-context
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: conan-context
+          path: .conan-context/conan-context.yml
+      - name: Configure Conan
+        run: |
+          git config --global url."https://github.com/".insteadOf git@github.com:
+          git config --global credential.helper "!f() { sleep 1; echo \"username=github\"; echo \"password=${CONAN_GIT_TOKEN}\"; }; f"
+          conan config install https://github.com/KUBA-EMB-CI/conan-config.git
+          sed -i 's/http:\/\//https:\/\//' ~/.conan2/remotes.json
+          conan remote login -p "$ARTIFACTORY_TOKEN" "VOQA-SNAPSHOTS" "$ARTIFACTORY_USERNAME"
+          conan remote login -p "$ARTIFACTORY_TOKEN" "VOQA-RELEASES"  "$ARTIFACTORY_USERNAME"
+      - run: bash test.sh
+      - name: Publish Test Report
+        uses: mikepenz/action-junit-report@v4
+        if: success() || failure()
+        with:
+          report_paths: 'build/junit-results.xml'
+  quality-analysis:
+    runs-on: ubuntu-latest
+    needs:
+      - generate-conan-context
+    steps:
+      - run: echo "Will run a SonarQube analysis"
+  build-and-upload:
+    runs-on: docker-voqa-ubuntu-22-04
+    container:
+      image: docker-internal.it.voqa.com/aurora-compilers:main
+      credentials:
+        username: ${{ secrets.DOCKER_INTERNAL_REGISTRY_USERNAME}}
+        password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
+    needs:
+      - unit-tests
+      - quality-analysis
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: conan-context
+          path: .conan-context
+      - name: Configure Conan
+        run: |
+          git config --global url."https://github.com/".insteadOf git@github.com:
+          git config --global credential.helper "!f() { sleep 1; echo \"username=github\"; echo \"password=${CONAN_GIT_TOKEN}\"; }; f"
+          conan config install https://github.com/KUBA-EMB-CI/conan-config.git
+          sed -i 's/http:\/\//https:\/\//' ~/.conan2/remotes.json
+          conan remote login -p "$ARTIFACTORY_TOKEN" "VOQA-SNAPSHOTS" "$ARTIFACTORY_USERNAME"
+          conan remote login -p "$ARTIFACTORY_TOKEN" "VOQA-RELEASES" "$ARTIFACTORY_USERNAME"
+      - name: Conan create
+        run: conan create . -pr:h aurora --build=missing -c tools.build:skip_test=True
+      - name: Conan upload
+        run: |
+          BRANCH_NAME="${GITHUB_REF_NAME}"
+          if [ "$BRANCH_NAME" = "main" ]; then
+            conan upload */*@* -r VOQA-SNAPSHOTS --confirm
+          elif [ ! -z "$GITHUB_BASE_REF" ]; then
+            conan upload */*@* -r VOQA-RELEASES --confirm
+          else
+            echo "Unable to set conan channel"
+            exit 1
+          fi

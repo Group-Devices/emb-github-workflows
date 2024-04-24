@@ -1,2 +1,6 @@
-# emb-github-workflows
-Embedded Github Workflows
+# Embedded Github Workflows
+
+The Github workflows used by Embedded projects.
+
+
+
