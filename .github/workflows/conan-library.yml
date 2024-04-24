@@ -14,10 +14,12 @@ jobs:
   generate-conan-context:
     runs-on: docker-voqa-ubuntu-22-04
     container:
-      image: docker-internal.it.voqa.com/aurora-compilers:main
+      image: docker-internal.it.voqa.com/aurora-compiler:main
       credentials:
         username: ${{ secrets.DOCKER_INTERNAL_REGISTRY_USERNAME}}
         password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
+    outputs:
+      build-profile-list: ${{ steps.generate-build-profiles-list.outputs.list }}
     steps:
       - uses: actions/checkout@v4
       - name: Generate the conan context
@@ -72,6 +74,9 @@ jobs:
           curl -H "Authorization: token ${CONAN_GIT_TOKEN}" \
                 -H "Accept: application/vnd.github.v3.raw" \
                 -L "${CONAN_CONTEXT_URL}?ref=${REF}" > .conan-context/conan-context.yml
+      - name: 'Output the build profiles list'
+        id: generate-build-profiles-list
+        run: echo "list=$(yq -r '.build.profiles' .conan-context/conan-context.yml -o=json | jq -c)" >> "$GITHUB_OUTPUT"
       - name: 'Upload conan context'
         uses: actions/upload-artifact@v4
         with:
@@ -80,7 +85,7 @@ jobs:
   unit-tests:
     runs-on: docker-voqa-ubuntu-22-04
     container:
-      image: docker-internal.it.voqa.com/aurora-compilers:main
+      image: docker-internal.it.voqa.com/aurora-compiler:main
       credentials:
         username: ${{ secrets.DOCKER_INTERNAL_REGISTRY_USERNAME}}
         password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
@@ -118,14 +123,18 @@ jobs:
       - run: echo "Will run a SonarQube analysis"
   build-and-upload:
     runs-on: docker-voqa-ubuntu-22-04
+    needs:
+      - generate-conan-context
+      - unit-tests
+      - quality-analysis
+    strategy:
+      matrix:
+        profile: ${{ fromJson(needs.generate-conan-context.outputs.build-profile-list) }}
     container:
-      image: docker-internal.it.voqa.com/aurora-compilers:main
+      image: docker-internal.it.voqa.com/${{ matrix.profile }}-compiler:main
       credentials:
         username: ${{ secrets.DOCKER_INTERNAL_REGISTRY_USERNAME}}
         password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
-    needs:
-      - unit-tests
-      - quality-analysis
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -141,7 +150,7 @@ jobs:
           conan remote login -p "$ARTIFACTORY_TOKEN" "VOQA-SNAPSHOTS" "$ARTIFACTORY_USERNAME"
           conan remote login -p "$ARTIFACTORY_TOKEN" "VOQA-RELEASES" "$ARTIFACTORY_USERNAME"
       - name: Conan create
-        run: conan create . -pr:h aurora --build=missing -c tools.build:skip_test=True
+        run: conan create . -pr:h ${{ matrix.profile }} --build=missing -c tools.build:skip_test=True
       - name: Conan upload
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
         run: |
