@@ -173,6 +173,11 @@ jobs:
             echo "Unable to set conan channel"
             exit 1
           fi
+  dispatch-rebuild:
+    runs-on: docker-voqa-ubuntu-22-04
+    needs:
+      - build-and-upload
+    steps:
       - name: dispatch rebuild
         run: |
           curl -v -L -X POST -H "Accept: application/vnd.github+json" \
