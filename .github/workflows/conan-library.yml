@@ -86,6 +86,7 @@ jobs:
           path: .conan-context/conan-context.yml
   unit-tests:
     runs-on: docker-voqa-ubuntu-22-04
+    if: github.event.action == 'opened' || github.event.action == 'reopened'
     container:
       image: docker-internal.it.voqa.com/aurora-compiler:main
       credentials:
@@ -119,6 +120,7 @@ jobs:
           report_paths: 'ci-report/junit-results.xml'
   quality-analysis:
     runs-on: ubuntu-latest
+    if: github.event.action == 'opened' || github.event.action == 'reopened'
     needs:
       - generate-conan-context
     steps:
@@ -158,21 +160,27 @@ jobs:
           conan create . --format json -pr:h ${{ matrix.profile }} --build=missing >  create_${{ matrix.profile }}.json
           conan art:build-info create create_${{ matrix.profile }}.json ${{ matrix.profile }} 1 VOQA_RELEASES --server artifactoryServer --with-dependencies > ${{ matrix.profile }}.json
       - name: Conan upload
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+        if: github.event.action == 'closed' && github.event.pull_request.merged == true
         run: |
           BRANCH_NAME="${GITHUB_REF_NAME}"
           if [ "$BRANCH_NAME" = "main" ]; then
             conan upload '*' -r VOQA-SNAPSHOTS --confirm
           elif [ ! -z "$GITHUB_BASE_REF" ]; then
             conan upload '*' -r VOQA-RELEASES --confirm
-            # conan art:build-info append mybuildname_aggregated 1 --build-info=taipan,1 --build-info=kp6tab,1 --build-info=aurora,1 --server my_artifactory > mybuildname_aggregated.json
-            conan art:build-info upload taipan.json --server artifactoryServer
-            conan art:build-info upload kp6tab.json --server artifactoryServer
-            conan art:build-info upload aurora.json --server artifactoryServer
           else
             echo "Unable to set conan channel"
             exit 1
           fi
+          # conan art:build-info append mybuildname_aggregated 1 --build-info=taipan,1 --build-info=kp6tab,1 --build-info=aurora,1 --server my_artifactory > mybuildname_aggregated.json
+          conan art:build-info upload taipan.json --server artifactoryServer
+          conan art:build-info upload kp6tab.json --server artifactoryServer
+          conan art:build-info upload aurora.json --server artifactoryServer
+  dispatch-rebuild:
+    runs-on: ubuntu-latest
+    if: github.event.action == 'closed' && github.event.pull_request.merged == true
+    needs:
+      - build-and-upload
+    steps:
       - name: dispatch rebuild
         run: |
           curl -v -L -X POST -H "Accept: application/vnd.github+json" \
