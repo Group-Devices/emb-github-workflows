@@ -152,7 +152,7 @@ jobs:
           conan remote login -p "$ARTIFACTORY_TOKEN" "VOQA-SNAPSHOTS" "$ARTIFACTORY_USERNAME"
           conan remote login -p "$ARTIFACTORY_TOKEN" "VOQA-RELEASES" "$ARTIFACTORY_USERNAME"
           conan config install https://github.com/conan-io/conan-extensions.git
-          conan art:server add artifactoryServer https://artifactory.it.voqa.com/artifactory --user $ARTIFACTORY_USERNAME --password $ARTIFACTORY_TOKEN | true
+          conan art:server add artifactoryServer https://artifactory.it.voqa.com/artifactory --user $ARTIFACTORY_USERNAME --token $ARTIFACTORY_TOKEN | true
       - name: Conan create
         run: |
           conan create . --format json -pr:h ${{ matrix.profile }} --build=missing >  create_${{ matrix.profile }}.json
