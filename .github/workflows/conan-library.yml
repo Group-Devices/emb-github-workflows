@@ -11,6 +11,7 @@ env:
   NEXUS_TOKEN: ${{ secrets.NEXUS_TOKEN }}
   SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
   SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
+  FEATURE_BUILD_INFO_ENABLED: "false"
 
 jobs:
   generate-conan-context:
@@ -155,12 +156,16 @@ jobs:
           sed -i 's/http:\/\//https:\/\//' ~/.conan2/remotes.json
           conan remote login -p "$ARTIFACTORY_TOKEN" "VOQA-SNAPSHOTS" "$ARTIFACTORY_USERNAME"
           conan remote login -p "$ARTIFACTORY_TOKEN" "VOQA-RELEASES" "$ARTIFACTORY_USERNAME"
-          conan config install https://github.com/conan-io/conan-extensions.git
-          conan art:server add artifactoryServer https://artifactory.it.voqa.com/artifactory --user $ARTIFACTORY_USERNAME --token $ARTIFACTORY_TOKEN | true
+          if [ $FEATURE_BUILD_INFO_ENABLED == "true" ]; then
+            conan config install https://github.com/conan-io/conan-extensions.git
+            conan art:server add artifactoryServer https://artifactory.it.voqa.com/artifactory --user $ARTIFACTORY_USERNAME --token $ARTIFACTORY_TOKEN | true
+          fi
       - name: Conan create
         run: |
           conan create . --format json -pr:h ${{ matrix.profile }} --build=missing >  create_${{ matrix.profile }}.json
-          conan art:build-info create create_${{ matrix.profile }}.json ${{ matrix.profile }} 1 VOQA_RELEASES --server artifactoryServer --with-dependencies  --user $ARTIFACTORY_USERNAME --token $ARTIFACTORY_TOKEN  > ${{ matrix.profile }}.json
+          if [ $FEATURE_BUILD_INFO_ENABLED == "true" ]; then
+            conan art:build-info create create_${{ matrix.profile }}.json ${{ matrix.profile }} 1 VOQA_RELEASES --server artifactoryServer --with-dependencies  --user $ARTIFACTORY_USERNAME --token $ARTIFACTORY_TOKEN  > ${{ matrix.profile }}.json
+          fi
       - name: Conan upload
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
         run: |
@@ -173,8 +178,10 @@ jobs:
             echo "Unable to set conan channel"
             exit 1
           fi
-          # conan art:build-info append mybuildname_aggregated 1 --build-info=taipan,1 --build-info=kp6tab,1 --build-info=aurora,1 --server my_artifactory > mybuildname_aggregated.json
-          conan art:build-info upload ${{ matrix.profile }}.json --server artifactoryServer  --user $ARTIFACTORY_USERNAME --token $ARTIFACTORY_TOKEN 
+          if [ $FEATURE_BUILD_INFO_ENABLED == "true" ] 
+            conan art:build-info append mybuildname_aggregated 1 --build-info=taipan,1 --build-info=kp6tab,1 --build-info=aurora,1 --server my_artifactory > mybuildname_aggregated.json
+            conan art:build-info upload ${{ matrix.profile }}.json --server artifactoryServer  --user $ARTIFACTORY_USERNAME --token $ARTIFACTORY_TOKEN 
+          fi
   rebuild-collectors:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
