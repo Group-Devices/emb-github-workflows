@@ -178,8 +178,7 @@ jobs:
             echo "Unable to set conan channel"
             exit 1
           fi
-          if [ $FEATURE_BUILD_INFO_ENABLED == "true" ] 
-            conan art:build-info append mybuildname_aggregated 1 --build-info=taipan,1 --build-info=kp6tab,1 --build-info=aurora,1 --server my_artifactory > mybuildname_aggregated.json
+          if [ $FEATURE_BUILD_INFO_ENABLED == "true" ]; then
             conan art:build-info upload ${{ matrix.profile }}.json --server artifactoryServer  --user $ARTIFACTORY_USERNAME --token $ARTIFACTORY_TOKEN 
           fi
   rebuild-collectors:
