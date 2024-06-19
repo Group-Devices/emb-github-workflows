@@ -75,15 +75,32 @@ jobs:
 
           mkdir -p .conan-context
 
-          curl -H "Authorization: token ${CONAN_GIT_TOKEN}" \
+          echo "Will download conan context at: ${CONAN_CONTEXT_URL}?ref=${REF}"
+          curl --fail -H "Authorization: token ${CONAN_GIT_TOKEN}" \
                 -H "Accept: application/vnd.github.v3.raw" \
-                -L "${CONAN_CONTEXT_URL}?ref=${REF}" > .conan-context/conan-context.yml
+                -L "${CONAN_CONTEXT_URL}?ref=${REF}" > ".conan-context/conan-context.yml"
       - name: 'Output the build profiles list'
         id: generate-build-profiles-list
-        run: echo "list=$(yq -r '.build.profiles' .conan-context/conan-context.yml -o=json | jq -c)" >> "$GITHUB_OUTPUT"
+        run: |
+          FIELD="build.profiles"
+          result=$(yq eval ".${FIELD} | type" ".conan-context/conan-context.yml")
+          if [ "$result" = "!!seq" ]; then
+            echo "list=$(yq -r ".${FIELD}" .conan-context/conan-context.yml -o=json | jq -c)" >> "$GITHUB_OUTPUT"
+          else
+            echo "File: .conan-context/conan-context.yml - Field '$FIELD' does not exist or is not an array."
+            exit 1
+          fi
       - name: 'Output the collectors list'
         id: generate-collectors-list
-        run: echo "list=$(yq -r '.build.collectors' .conan-context/conan-context.yml -o=json | jq -c)" >> "$GITHUB_OUTPUT"
+        run: |
+          FIELD="build.collectors"
+          result=$(yq eval ".${FIELD} | type" ".conan-context/conan-context.yml")
+          if [ "$result" = "!!seq" ]; then
+            echo "list=$(yq -r ".${FIELD}" .conan-context/conan-context.yml -o=json | jq -c)" >> "$GITHUB_OUTPUT"
+          else
+            echo "File: .conan-context/conan-context.yml - Field '$FIELD' does not exist or is not an array."
+            exit 1
+          fi
       - name: 'Upload conan context'
         uses: actions/upload-artifact@v4
         with:
