@@ -60,7 +60,17 @@ jobs:
           EOF
           ## END GENERATE PYTHON SCRIPT
 
-          user=$(python3 extract-conanfile-field.py user)
+          echo "Search for bundle/user field in conanfile"
+          user=$(python3 extract-conanfile-field.py bundle)
+          if [ -z "$user" ] || [ "$user" = "None" ]; then
+            echo "... bundle is empty or None, will look for user field" # for retrocompat
+            user=$(python3 extract-conanfile-field.py user)
+          fi
+          if [ -z "$user" ] || [ "$user" = "None" ]; then
+            echo "Unable to set bundle/user field in conanfile !"
+            exit 1
+          fi
+          echo "Bundle(user) found: $user"
 
           CONAN_CONTEXT_URL=https://api.github.com/repos/KUBA-Aurora/${user}-conan-context/contents/conan-context.yml
 
