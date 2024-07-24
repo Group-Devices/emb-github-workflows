@@ -14,6 +14,7 @@ env:
   SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
   SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
   FEATURE_BUILD_INFO_ENABLED: "false"
+  CONAN_CONTEXT_PATH: ".conan-context/conan-context.yml"
 
 jobs:
   generate-conan-context:
@@ -64,19 +65,17 @@ jobs:
           ## END GENERATE PYTHON SCRIPT
 
           echo "Search for bundle/user field in conanfile"
-          user=$(python3 extract-conanfile-field.py bundle)
-          if [ -z "$user" ] || [ "$user" = "None" ]; then
-            echo "... bundle is empty or None, will look for user field" # for retrocompat
-            user=$(python3 extract-conanfile-field.py user)
-          fi
-          if [ -z "$user" ] || [ "$user" = "None" ]; then
-            echo "Unable to set bundle/user field in conanfile !"
+          bundle=$(python3 extract-conanfile-field.py bundle)
+          if [ -z "$bundle" ] || [ "$bundle" = "None" ]; then
+            echo "Unable to find bundle field in conanfile !"
             exit 1
           fi
-          echo "Bundle(user) found: $user"
+          echo "Bundle found: $bundle"
+          owner=$(echo $bundle | cut -d'/' -f1)
+          echo "Owner: $owner"
 
-          CONAN_CONTEXT_URL=https://api.github.com/repos/KUBA-Aurora/${user}-conan-context/contents/conan-context.yml
-
+          CONAN_CONTEXT_URL=https://api.github.com/repos/${bundle}/contents/conan-context.yml
+          
           REF=""
           BRANCH_NAME="${GITHUB_REF_NAME}"
           if [ "$BRANCH_NAME" = "main" ]; then
@@ -90,37 +89,49 @@ jobs:
 
           mkdir -p .conan-context
 
+          OWNER_GIT_TOKEN_SECRET="$(echo $owner | tr '[:lower:]' '[:upper:]' | tr '-' '_')_GIT_TOKEN"
+          all_secrets='${{ tojson(secrets) }}'
+          OWNER_GIT_TOKEN=$(echo $all_secrets | jq -r ".${OWNER_GIT_TOKEN_SECRET}")
+          all_secrets=''
+          
+          if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
+            echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
+            echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/$owner/settings/secrets/actions"
+          else
+            echo "Found secret ${OWNER_GIT_TOKEN_SECRET} that will be use to download conan context at ${CONAN_CONTEXT_URL}"
+          fi
+          
           echo "Will download conan context at: ${CONAN_CONTEXT_URL}?ref=${REF}"
-          curl --fail -H "Authorization: token ${KUBA_AURORA_GIT_TOKEN}" \
+          curl --fail -H "Authorization: token ${OWNER_GIT_TOKEN}" \
                 -H "Accept: application/vnd.github.v3.raw" \
-                -L "${CONAN_CONTEXT_URL}?ref=${REF}" > ".conan-context/conan-context.yml"
+                -L "${CONAN_CONTEXT_URL}?ref=${REF}" > "${CONAN_CONTEXT_PATH}"
       - name: 'Output the build profiles list'
         id: generate-build-profiles-list
         run: |
           FIELD="build.profiles"
-          result=$(yq eval ".${FIELD} | type" ".conan-context/conan-context.yml")
+          result=$(yq eval ".${FIELD} | type" "${CONAN_CONTEXT_PATH}")
           if [ "$result" = "!!seq" ]; then
-            echo "list=$(yq -r ".${FIELD}" .conan-context/conan-context.yml -o=json | jq -c)" >> "$GITHUB_OUTPUT"
+            echo "list=$(yq -r ".${FIELD}" ${CONAN_CONTEXT_PATH} -o=json | jq -c)" >> "$GITHUB_OUTPUT"
           else
-            echo "File: .conan-context/conan-context.yml - Field '$FIELD' does not exist or is not an array."
+            echo "File: ${CONAN_CONTEXT_PATH} - Field '$FIELD' does not exist or is not an array."
             exit 1
           fi
       - name: 'Output the collectors list'
         id: generate-collectors-list
         run: |
           FIELD="build.collectors"
-          result=$(yq eval ".${FIELD} | type" ".conan-context/conan-context.yml")
+          result=$(yq eval ".${FIELD} | type" "${CONAN_CONTEXT_PATH}")
           if [ "$result" = "!!seq" ]; then
-            echo "list=$(yq -r ".${FIELD}" .conan-context/conan-context.yml -o=json | jq -c)" >> "$GITHUB_OUTPUT"
+            echo "list=$(yq -r ".${FIELD}" ${CONAN_CONTEXT_PATH} -o=json | jq -c)" >> "$GITHUB_OUTPUT"
           else
-            echo "File: .conan-context/conan-context.yml - Field '$FIELD' does not exist or is not an array."
+            echo "File: ${CONAN_CONTEXT_PATH} - Field '$FIELD' does not exist or is not an array."
             exit 1
           fi
       - name: 'Upload conan context'
         uses: actions/upload-artifact@v4
         with:
           name: conan-context
-          path: .conan-context/conan-context.yml
+          path: ${{ env.CONAN_CONTEXT_PATH }}
   unit-tests:
     runs-on: voqa-ubuntu-22-04
     container:
@@ -139,9 +150,37 @@ jobs:
       - name: Configure Conan
         run: |
           git config --global url."https://github.com/".insteadOf git@github.com:
-          git config --global credential."https://github.com/aVOQA".helper "!f() { sleep 1; echo \"username=github\"; echo \"password=${AVOQA_GIT_TOKEN}\"; }; f"
-          git config --global credential."https://github.com/KUBA-Aurora".helper "!f() { sleep 1; echo \"username=github\"; echo \"password=${KUBA_AURORA_GIT_TOKEN}\"; }; f"
-          git config --global credential."https://github.com/KUBA-EMB-CI".helper "!f() { sleep 1; echo \"username=github\"; echo \"password=${KUBA_EMB_CI_GIT_TOKEN}\"; }; f"
+          
+          organisations=$(yq -r '.organisations[]' ${CONAN_CONTEXT_PATH})
+  
+          if [ "null" = "$organisations" ]; then
+            echo "Field organisations is missing in ${CONAN_CONTEXT_PATH}"
+            echo "Please set it"
+            exit 1
+          fi
+  
+          if [ -z "$organisations" ]; then
+            echo "Field organisations is empty in ${CONAN_CONTEXT_PATH}"
+            echo "Skip conan git credentials configuration"
+          else
+            echo "Start conan git credentials configuration"
+            all_secrets='${{ tojson(secrets) }}'
+            for org in $organisations; do
+              secret_to_extract=$(echo $org | tr '[:lower:]' '[:upper:]' | tr '-' '_')_GIT_TOKEN
+              echo "Extracting github secret $secret_to_extract for organisation $org"
+              secret=$(echo $all_secrets | jq -r ".$secret_to_extract")
+              if [ "null" = "$secret" ]; then
+                echo "Secret $secret_to_extract not found !"
+                echo "Please add secret $secret_to_extract to https://github.com/organizations/$org/settings/secrets/actions"
+                exit 1
+              else
+                echo "Secret $secret_to_extract found !"
+                echo "Configure git conan credentials for https://github.com/$org"
+                git config --global credential."https://github.com/$org".helper "!f() { sleep 1; echo \"username=github\"; echo \"password=${secret}\"; }; f"
+              fi
+            done
+          fi
+  
           conan config install https://github.com/KUBA-EMB-CI/conan-config.git
           sed -i 's/http:\/\//https:\/\//' ~/.conan2/remotes.json
           conan remote login -p "$ARTIFACTORY_TOKEN" "VOQA-SNAPSHOTS" "$ARTIFACTORY_USERNAME"
