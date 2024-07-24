@@ -180,9 +180,23 @@ jobs:
               fi
             done
           fi
+          
+          echo "Start conan install config"
+          conan_config_url=$(yq e '.conan.config.url' ${CONAN_CONTEXT_PATH})
+          conan_config_branch=$(yq e '.conan.config.branch' ${CONAN_CONTEXT_PATH})
+          if [ -z "$conan_config_url" ] || [ "null" = "$conan_config_url" ]; then
+            echo "Field conan.config.url is missing in ${CONAN_CONTEXT_PATH}"
+            echo "Please add it"
+            exit 1
+          fi
+          if [ -z "$conan_config_branch" ] || [ "null" = "$conan_config_branch" ]; then
+            echo "Field conan.config.branch is missing in ${CONAN_CONTEXT_PATH}, use main by default"
+            conan_config_branch="main"
+          fi
+          echo "Will use conan_config_url: ${conan_config_url}, conan_config_branch: ${conan_config_branch}"
   
-          conan config install https://github.com/KUBA-EMB-CI/conan-config.git
-          sed -i 's/http:\/\//https:\/\//' ~/.conan2/remotes.json
+          conan config install "${conan_config_url}" --args="-b ${conan_config_branch}"
+  
           conan remote login -p "$ARTIFACTORY_TOKEN" "VOQA-SNAPSHOTS" "$ARTIFACTORY_USERNAME"
           conan remote login -p "$ARTIFACTORY_TOKEN" "VOQA-RELEASES"  "$ARTIFACTORY_USERNAME"
       - run: bash test.sh
