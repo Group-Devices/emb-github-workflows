@@ -194,8 +194,9 @@ jobs:
         password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
     steps:
       - uses: actions/checkout@v4
-        with:
-          set-safe-directory: 'true' # needed by conan build helper
+      - name: Set safe git path
+        run: |
+          git config --global --add safe.directory ${{ github.workspace }}
       - uses: actions/download-artifact@v4
         with:
           name: conan-context
