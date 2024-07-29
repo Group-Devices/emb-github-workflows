@@ -28,119 +28,14 @@ jobs:
         username: ${{ secrets.DOCKER_INTERNAL_REGISTRY_USERNAME}}
         password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
     outputs:
-      build-profile-list: ${{ steps.generate-build-profiles-list.outputs.list }}
-      collectors-list: ${{ steps.generate-collectors-list.outputs.list }}
+      build-profile-list: ${{ steps.generate-conan-context.outputs.build-profile-list }}
+      collectors-list: ${{ steps.generate-conan-context.outputs.collectors-list }}
     steps:
       - uses: actions/checkout@v4
-      - name: Generate the conan context
-        run: |
-          ## START GENERATE PYTHON SCRIPT
-          cat > extract-conanfile-field.py <<EOF
-
-          import importlib.util
-          import inspect
-          import sys
-
-          def load_class(module_name):
-            spec = importlib.util.find_spec(module_name)
-            if spec is None:
-              raise ImportError(f"Module '{module_name}' not found.")
-
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-
-            classes = inspect.getmembers(module, inspect.isclass)
-            for name, cls in inspect.getmembers(module, inspect.isclass):
-              if cls.__module__ == module_name:
-                return cls
-            raise RuntimeError(f"No conan class found matching '{module_name}'")
-
-          if __name__ == "__main__":
-            field_to_extract = sys.argv[1]
-            module_name = "conanfile"
-            conan_class = load_class(module_name)
-            conan_instance = conan_class()
-            try:
-              print(getattr(conan_instance, field_to_extract))
-            except Exception as e:
-              print("")
-          EOF
-          ## END GENERATE PYTHON SCRIPT
-
-          echo "Search for bundle/user field in conanfile"
-          bundle=$(python3 extract-conanfile-field.py bundle)
-          if [ -z "$bundle" ] || [ "$bundle" = "None" ]; then
-            echo "Unable to find bundle field in conanfile !"
-            exit 1
-          fi
-          echo "Bundle found: $bundle"
-          if [ "$(echo "$bundle" | grep -c "/")" -ne "1" ]; then
-            echo "Bundle field in conanfile is not in the form of owner/bundle (ex: KUBA-EMB-CI/my-package) ! "
-            exit 1
-          fi
-          
-          owner=$(echo "$bundle" | cut -d'/' -f1)
-          echo "Owner: $owner"
-
-          CONAN_CONTEXT_URL="https://api.github.com/repos/${bundle}/contents/conan-context.yml"
-          
-          REF=""
-          BRANCH_NAME="${GITHUB_REF_NAME}"
-          if [ "$BRANCH_NAME" = "main" ]; then
-            REF="main"
-          elif [ -n "${GITHUB_BASE_REF}" ]; then
-              REF="${GITHUB_BASE_REF}"
-          else
-            echo "Unable to set conan channel"
-            exit 1
-          fi
-
-          mkdir -p .conan-context
-
-          OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_$(echo "$owner" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
-          # shellcheck disable=SC2086
-          all_secrets='${{ tojson(secrets) }}'
-          OWNER_GIT_TOKEN=$(echo $all_secrets | jq -r ".${OWNER_GIT_TOKEN_SECRET}")
-          all_secrets=''
-          
-          if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
-            echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
-            echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
-          else
-            echo "Found secret ${OWNER_GIT_TOKEN_SECRET} that will be use to download conan context at ${CONAN_CONTEXT_URL}"
-          fi
-          
-          echo "Will download conan context at: ${CONAN_CONTEXT_URL}?ref=${REF}"
-          curl --fail -H "Authorization: token ${OWNER_GIT_TOKEN}" \
-                -H "Accept: application/vnd.github.v3.raw" \
-                -L "${CONAN_CONTEXT_URL}?ref=${REF}" > "${CONAN_CONTEXT_PATH}"
-      - name: 'Output the build profiles list'
-        id: generate-build-profiles-list
-        run: |
-          FIELD="build.profiles"
-          result=$(yq eval ".${FIELD} | type" "${CONAN_CONTEXT_PATH}")
-          if [ "$result" = "!!seq" ]; then
-            echo "list=$(yq -r ".${FIELD}" "${CONAN_CONTEXT_PATH}" -o=json | jq -c)" >> "$GITHUB_OUTPUT"
-          else
-            echo "File: ${CONAN_CONTEXT_PATH} - Field '$FIELD' does not exist or is not an array."
-            exit 1
-          fi
-      - name: 'Output the collectors list'
-        id: generate-collectors-list
-        run: |
-          FIELD="build.collectors"
-          result=$(yq eval ".${FIELD} | type" "${CONAN_CONTEXT_PATH}")
-          if [ "$result" = "!!seq" ]; then
-            echo "list=$(yq -r ".${FIELD}" "${CONAN_CONTEXT_PATH}" -o=json | jq -c)" >> "$GITHUB_OUTPUT"
-          else
-            echo "File: ${CONAN_CONTEXT_PATH} - Field '$FIELD' does not exist or is not an array."
-            exit 1
-          fi
-      - name: 'Upload conan context'
-        uses: actions/upload-artifact@v4
+      - uses: KUBA-EMB-CI/action-generate-conan-context@main
+        id: generate-conan-context
         with:
-          name: conan-context
-          path: ${{ env.CONAN_CONTEXT_PATH }}
+          json-secrets: ${{ toJson(secrets) }}
   unit-tests:
     runs-on: voqa-ubuntu-22-04
     container:
