@@ -67,41 +67,12 @@ jobs:
           conan create . -pr:h ${{ matrix.profile }}
           conan install . -pr:h ${{ matrix.profile }} --deployer release  --deployer-folder=to_upload
 
-      - name: Define release environment variables
+      - name: Define release repository environment variables
         run: |
-          echo "RELEASE_REPOSITORY_NAME=RELEASE_REPOSITORY" >> "$GITHUB_ENV"
-          echo "RELEASE_REPOSITORY_URL=https://artifactory.it.voqa.com/artifactory/api/conan/buildtools-${{ inputs.release-name }}"  >> "$GITHUB_ENV" 
-
-      - name: Configure conan release repository
-        run: |
-          conan remote add "${RELEASE_REPOSITORY_NAME}" "${RELEASE_REPOSITORY_URL}" --force
-          echo "Add conan authentication for release repository"
-          repo_url_target=$(echo "$RELEASE_REPOSITORY_URL" | sed -e 's/https:\/\///' -e 's/\/.*//')
-          echo "Extracting github username secret for url ${repo_url_target}"
-          secret_username_to_extract=REPOSITORY_USERNAME_$(echo "$repo_url_target" | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')
-          echo "Looking for matching github secret ${secret_username_to_extract}"
-          all_secrets='${{ toJson(secrets) }}'
-          secret_username=$(echo "$all_secrets" | jq -r ".${secret_username_to_extract}")
-          if [ "null" = "${secret_username}" ]; then
-            echo "Secret ${secret_username_to_extract} not found !"
-            echo "Please add secret ${secret_username_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
-            exit 1
-          else
-            echo "Secret ${secret_username_to_extract} found !"
-          fi
-          echo "Extracting github token secret for url ${repo_url_target}"
-          secret_token_to_extract=REPOSITORY_TOKEN_$(echo "$repo_url_target" | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')
-          echo "Looking for matching github secret ${secret_token_to_extract}"
-          secret_token=$(echo "$all_secrets" | jq -r ".${secret_token_to_extract}")
-          if [ "null" = "${secret_token}" ]; then
-            echo "Secret ${secret_token_to_extract} not found !"
-            echo "Please add secret ${secret_token_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
-            exit 1
-          else
-            echo "Secret ${secret_token_to_extract} found !"
-          fi
-          conan remote login -p "${secret_token}" "${RELEASE_REPOSITORY_NAME}" "${secret_username}"
-          all_secrets=''
+          upload_repository=$(yq -r ".upload" "${CONAN_CONTEXT_PATH}")
+          upload_repository_url=$(yq -r ".repositories.${upload_repository}" "${CONAN_CONTEXT_PATH}")
+          echo "RELEASE_REPOSITORY_NAME=${upload_repository_url}" >> "$GITHUB_ENV"
+          echo "RELEASE_REPOSITORY_URL=${upload_repository_url}"  >> "$GITHUB_ENV"
 
       - name: Upload release
         run: |
