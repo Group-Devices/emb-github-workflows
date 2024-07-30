@@ -80,6 +80,7 @@ jobs:
       - generate-conan-context
       - unit-tests
     strategy:
+      fail-fast: false
       matrix:
         profile: ${{ fromJson(needs.generate-conan-context.outputs.build-profile-list) }}
     container:
@@ -125,6 +126,7 @@ jobs:
       - generate-conan-context
       - build-and-upload
     strategy:
+      fail-fast: false
       matrix:
         collector: ${{ fromJson(needs.generate-conan-context.outputs.collectors-list) }}
     env:
