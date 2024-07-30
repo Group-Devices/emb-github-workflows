@@ -1,0 +1,148 @@
+name: create release
+
+run-name: Create release ${{ inputs.release-name }} # on push will be equal to commit message
+
+on:
+  workflow_call:
+    inputs:
+      release-name:
+        description: 'release name'
+        required: true
+        type: string
+
+env:
+  CONAN_CONTEXT_PATH: ".conan-context/conan-context.yml"
+
+jobs:
+  generate-conan-context:
+    runs-on: voqa-ubuntu-22-04
+    container:
+      image: docker-internal.it.voqa.com/kp6tab-compiler:main
+      credentials:
+        username: ${{ secrets.DOCKER_INTERNAL_REGISTRY_USERNAME}}
+        password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
+    outputs:
+      build-profile-list: ${{ steps.generate-conan-context.outputs.build-profile-list }}
+      collectors-list: ${{ steps.generate-conan-context.outputs.collectors-list }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate the conan context
+        id: generate-conan-context
+        uses: KUBA-EMB-CI/action-generate-conan-context@main
+        with:
+          json-secrets: ${{ toJson(secrets) }}
+
+  create-release:
+    runs-on: voqa-ubuntu-22-04
+    strategy:
+      matrix:
+        profile: ${{ fromJson(needs.generate-conan-context.outputs.build-profile-list) }}
+    container:
+      image: docker-internal.it.voqa.com/${{ matrix.profile }}-compiler:main
+      credentials:
+        username: ${{ secrets.DOCKER_INTERNAL_REGISTRY_USERNAME}}
+        password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
+    needs:
+      - generate-conan-context
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: conan-context
+          path: .conan-context
+
+      - name: Configure conan
+        uses: KUBA-EMB-CI/action-configure-conan@main
+        with:
+          json-secrets: ${{ toJson(secrets) }}
+          conan-context-path: .conan-context/conan-context.yml
+
+      - name: Set safe git path
+        run: |
+          repo=$(basename ${{ github.repository }})
+          git config --global --add safe.directory "/__w/${repo}/${repo}"
+
+      - name: Generate dependencies for ${{ matrix.profile }}
+        run: |
+          conan create . -pr:h ${{ matrix.profile }}
+          conan install . -pr:h ${{ matrix.profile }} --deployer release  --deployer-folder=to_upload
+
+      - name: Define release environment variables
+        run: |
+          echo "RELEASE_REPOSITORY_NAME=RELEASE_REPOSITORY" >> "$GITHUB_ENV"
+          echo "RELEASE_REPOSITORY_URL=https://artifactory.it.voqa.com/artifactory/api/conan/buildtools-${{ inputs.release-name }}"  >> "$GITHUB_ENV" 
+
+      - name: Configure conan release repository
+        run: |
+          conan remote add "${RELEASE_REPOSITORY_NAME}" "${RELEASE_REPOSITORY_URL}"
+          echo "Add conan authentication for release repository"
+          repo_url_target=$(echo "$RELEASE_REPOSITORY_URL" | sed -e 's/https:\/\///' -e 's/\/.*//')
+          echo "Extracting github username secret for url ${repo_url_target}"
+          secret_username_to_extract=REPOSITORY_USERNAME_$(echo "$repo_url_target" | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')
+          echo "Looking for matching github secret ${secret_username_to_extract}"
+          all_secrets='${{ toJson(secrets) }}'
+          secret_username=$(echo "$all_secrets" | jq -r ".${secret_username_to_extract}")
+          if [ "null" = "${secret_username}" ]; then
+            echo "Secret ${secret_username_to_extract} not found !"
+            echo "Please add secret ${secret_username_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
+            exit 1
+          else
+            echo "Secret ${secret_username_to_extract} found !"
+          fi
+          echo "Extracting github token secret for url ${repo_url_target}"
+          secret_token_to_extract=REPOSITORY_TOKEN_$(echo "$repo_url_target" | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')
+          echo "Looking for matching github secret ${secret_token_to_extract}"
+          secret_token=$(echo "$all_secrets" | jq -r ".${secret_token_to_extract}")
+          if [ "null" = "${secret_token}" ]; then
+            echo "Secret ${secret_token_to_extract} not found !"
+            echo "Please add secret ${secret_token_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
+            exit 1
+          else
+            echo "Secret ${secret_token_to_extract} found !"
+          fi
+          conan remote login -p "${secret_token}" "${RELEASE_REPOSITORY_NAME}" "${secret_username}"
+          all_secrets=''
+
+      - name: Upload release
+        run: |
+          jq -c '.[] ' ./to_upload/packages.json | while read -r repository ; do \
+            package=$(echo "$repository" | jq -r .name)
+            version=$(echo "$repository" | jq -r .version) 
+            url=$(echo "$repository" | jq -r .url) 
+            URL_NOPRO=${url#*//}
+            URL_REL=${URL_NOPRO#*/}
+            sha=$(echo "$repository" | jq -r .sha)
+            OWNER=$(echo "${URL_REL}" | cut -d'/' -f1)
+            echo "Extracting github token secret for org ${OWNER}"
+            OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_RELEASE_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+            echo "Looking for matching github secret ${OWNER_GIT_TOKEN_SECRET}"
+            # shellcheck disable=SC2086
+            all_secrets='${{ tojson(secrets) }}'
+            OWNER_GIT_TOKEN=$(echo "$all_secrets" | jq -r ".${OWNER_GIT_TOKEN_SECRET}")
+            all_secrets=''
+            if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
+              echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
+              echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
+              exit 1
+            else
+              echo "Found secret ${OWNER_GIT_TOKEN_SECRET}"
+            fi
+            echo "${OWNER_GIT_TOKEN}" > mytoken.txt
+            gh auth login --with-token < mytoken.txt
+            rm mytoken.txt
+            if gh api "repos/${URL_REL}/branches/release/${{ inputs.release-name }}" --silent > /dev/null 2>&1; then
+              echo "Branch release/${{ inputs.release-name }} already found in ${URL_REL}"
+            else
+              echo "Branch release/${{ inputs.release-name }} not found in ${URL_REL}, create it now"
+              curl --fail -X POST -H "Authorization: token ${OWNER_GIT_TOKEN}" -d  "{\"ref\": \"refs/heads/release/${{ inputs.release-name }}\",\"sha\": \"$sha\"}" "https://api.github.com/repos/$URL_REL/git/refs"
+            fi
+            conan upload -r "${RELEASE_REPOSITORY_NAME}" "$package/$version" 
+          done
+
+      - name: 'Upload bundle packages contents'
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-release-${{ matrix.profile }}
+          path: ./to_upload/packages.json
