@@ -51,21 +51,49 @@ jobs:
           name: conan-context
           path: .conan-context
 
+      - name: Set safe git path
+        run: |
+          repo=$(basename ${{ github.repository }})
+          git config --global --add safe.directory "/__w/${repo}/${repo}"
+
       - name: Configure conan
         uses: KUBA-EMB-CI/action-configure-conan@main
         with:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: .conan-context/conan-context.yml
 
-      - name: Set safe git path
+      - name: Set from repositoriry
         run: |
-          repo=$(basename ${{ github.repository }})
-          git config --global --add safe.directory "/__w/${repo}/${repo}"
+
+      - name: Add original repository in configuration
+        run: |
+          from_repository_url=$(yq -r ".from" "${CONAN_CONTEXT_PATH}")
+          echo "Add conan authentication for FROM repository"
+          repo_url_target=$(echo $from_repository_url | sed -e 's/https:\/\///' -e 's/\/.*//')
+          secret_username_to_extract="REPOSITORY_USERNAME_$(echo $repo_url_target | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')"
+          echo "Extracting github secret ${secret_username_to_extract}"
+          secret_username=$(echo $all_secrets | jq -r ".${secret_username_to_extract}")
+          if [ "null" = "${secret_username}" ]; then
+            echo "Secret ${secret_username_to_extract} not found !"
+            echo "Please add secret ${secret_username_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
+            exit 1
+          fi
+          secret_token_to_extract="REPOSITORY_TOKEN_$(echo $repo_url_target | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')"
+          echo "Extracting github secret ${secret_token_to_extract}"
+          secret_token=$(echo $all_secrets | jq -r ".${secret_token_to_extract}")
+          if [ "null" = "${secret_token}" ]; then
+            echo "Secret ${secret_token_to_extract} not found !"
+            echo "Please add secret ${secret_token_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
+            exit 1
+          fi
+          conan remote add "FROM" "${from_repository_url}"
+          conan remote login -p "${secret_token}" "FROM" "${secret_username}"
 
       - name: Generate dependencies for ${{ matrix.profile }}
         run: |
           conan create . -pr:h ${{ matrix.profile }}
           conan install . -pr:h ${{ matrix.profile }} --deployer release  --deployer-folder=to_upload
+          conan remote remove FROM
 
       - name: Define release repository environment variables
         run: |
