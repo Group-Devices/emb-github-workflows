@@ -1,0 +1,138 @@
+name: "Clone workspace"
+
+on:
+  workflow_call:
+
+env:
+  CONAN_CONTEXT_PATH: conan-context.yml
+
+jobs:
+  check-conan-context:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check if conan-context.yml exists
+        run: |
+          if [ -f "conan-context.yml" ]; then
+            echo "File conan-context.yml exists."
+          else
+            echo "File conan-context.yml does not exist."
+            exit 1
+          fi
+
+      - name: Check if version match release in repositories
+        run: |
+          release_name=$(basename "${{ github.ref }}")
+          echo "Analyze conan context to check if upload repository match the expected release name"
+          upload_repository=$(yq -r ".upload" "${CONAN_CONTEXT_PATH}")
+          upload_repository_url=$(yq -r ".repositories.${upload_repository}" "${CONAN_CONTEXT_PATH}")
+          suffix="-${release_name}"
+          if [[ $upload_repository_url == *$suffix ]]; then
+            echo "The upload repository matches the expected release name ${release_name}"
+          else
+            echo "The upload repository does not match the expected release name"
+            echo "Conan is configured to upload to ${upload_repository}"
+            echo "The repository url of ${upload_repository} is ${upload_repository_url}"
+            echo "Current release name should be ${release_name}"
+            exit 1
+          fi
+
+  extract-collectors:
+    runs-on: ubuntu-latest
+    outputs:
+      collectors-list: ${{ steps.generate-collectors-list.outputs.list }}
+    needs:
+      - check-conan-context
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract the collectors list
+        id: generate-collectors-list
+        shell: bash
+        run: |
+          FIELD="build.collectors"
+          result=$(yq eval ".${FIELD} | type" "${CONAN_CONTEXT_PATH}")
+          if [ "$result" = "!!seq" ]; then
+            echo "list=$(yq -r ".${FIELD}" "${CONAN_CONTEXT_PATH}" -o=json | jq -c)" >> "$GITHUB_OUTPUT"
+          else
+            echo "File: ${CONAN_CONTEXT_PATH} - Field '$FIELD' does not exist or is not an array."
+            exit 1
+          fi
+
+  clone-collector-workspace:
+    runs-on: ubuntu-latest
+    needs:
+      - extract-collectors
+    strategy:
+      matrix:
+        collector: ${{ fromJson(needs.extract-collectors.outputs.collectors-list) }}
+    env:
+      TARGET_WORKFLOW: "clone-workspace.yml"
+    steps:
+      - name: Extract release name
+        run: |
+          release_name=$(basename "${{ github.ref }}")
+          echo "Release name: ${release_name}"
+          echo "RELEASE_NAME=${release_name}" >> "$GITHUB_ENV"
+
+      - name: Extract owner of collector ${{ matrix.collector }}
+        run: |
+          owner=$(echo "${{ matrix.collector }}" | cut -d'/' -f1)
+          echo "Owner of collector: ${owner}"
+          echo "OWNER=${owner}" >> "$GITHUB_ENV"
+
+      - name: Extract authentication token for ${{ env.OWNER }}
+        run: |
+          OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+          # shellcheck disable=SC2086
+          all_secrets='${{ tojson(secrets) }}'
+          OWNER_GIT_TOKEN=$(echo "$all_secrets" | jq -r ".${OWNER_GIT_TOKEN_SECRET}")
+          all_secrets=''
+          if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
+            echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
+            echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
+            exit 1
+          else
+            echo "Found secret ${OWNER_GIT_TOKEN_SECRET} that will be use to trigger rebuild of ${{ matrix.collector }}"
+          fi
+          echo "${OWNER_GIT_TOKEN}" > mytoken.txt
+          gh auth login --with-token < mytoken.txt
+          rm mytoken.txt
+
+      - name: Check if repository ${{ matrix.collector }} exists
+        run: |
+          if gh repo view "${{ matrix.collector }}" --json name --jq .name > /dev/null 2>&1; then
+            echo "Repository ${{ matrix.collector }} exists."
+          else
+            echo "Repository ${{ matrix.collector }} does not exist or actual token cannot see it."
+            exit 1
+          fi
+
+      - name: Check if branch ${{ github.ref_name }} exists in ${{ matrix.collector }}
+        run: |
+          if gh api repos/${{ matrix.collector }}/branches/${{ github.ref_name }} --silent > /dev/null 2>&1; then
+            echo "Branch ${{ github.ref_name }} found in ${{ matrix.collector }}"
+          else
+            echo "Branch ${{ github.ref_name }} does not exists in ${{ matrix.collector }}"
+            exit 1
+          fi
+
+      - name: Check if workflow ${{ env.TARGET_WORKFLOW }} exists in ${{ matrix.collector }}/${{ github.ref_name }}
+        run: |
+          wkf_exists=$(gh api repos/${{ matrix.collector }}/actions/workflows --jq ".workflows | map(select(.path == \".github/workflows/${TARGET_WORKFLOW}\")) | length > 0")
+          if [ "$wkf_exists" == "true" ]; then
+            echo "Workflow ${TARGET_WORKFLOW} exists in ${{ matrix.collector }}."
+          else
+            echo "Workflow ${TARGET_WORKFLOW} does not exists in ${{ matrix.collector }}."
+            exit 1
+          fi
+
+      - name: Dispatch workflow ${{ env.TARGET_WORKFLOW }} in ${{ matrix.collector }}/${{ github.ref_name }}
+        run: |
+          gh workflow run "${TARGET_WORKFLOW}" \
+            --repo "${{ matrix.collector }}" \
+            --ref "${{ github.ref_name }}" \
+            --field release-name="${RELEASE_NAME}"
