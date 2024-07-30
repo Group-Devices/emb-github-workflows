@@ -71,7 +71,7 @@ jobs:
         run: |
           upload_repository=$(yq -r ".upload" "${CONAN_CONTEXT_PATH}")
           upload_repository_url=$(yq -r ".repositories.${upload_repository}" "${CONAN_CONTEXT_PATH}")
-          echo "RELEASE_REPOSITORY_NAME=${upload_repository_url}" >> "$GITHUB_ENV"
+          echo "RELEASE_REPOSITORY_NAME=${upload_repository}" >> "$GITHUB_ENV"
           echo "RELEASE_REPOSITORY_URL=${upload_repository_url}"  >> "$GITHUB_ENV"
 
       - name: Upload release
