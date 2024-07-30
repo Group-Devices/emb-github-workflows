@@ -62,9 +62,6 @@ jobs:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: .conan-context/conan-context.yml
 
-      - name: Set from repositoriry
-        run: |
-
       - name: Add original repository in configuration
         run: |
           from_repository_url=$(yq -r ".from" "${CONAN_CONTEXT_PATH}")
@@ -72,8 +69,9 @@ jobs:
           repo_url_target=$(echo $from_repository_url | sed -e 's/https:\/\///' -e 's/\/.*//')
           secret_username_to_extract="REPOSITORY_USERNAME_$(echo $repo_url_target | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')"
           echo "Extracting github secret ${secret_username_to_extract}"
+          all_secrets='${{ tojson(secrets) }}'
           secret_username=$(echo $all_secrets | jq -r ".${secret_username_to_extract}")
-          if [ "null" = "${secret_username}" ]; then
+          if [ "null" = "${secret_username}" ] || [ -z "${secret_username}" ]; then
             echo "Secret ${secret_username_to_extract} not found !"
             echo "Please add secret ${secret_username_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
             exit 1
@@ -81,11 +79,12 @@ jobs:
           secret_token_to_extract="REPOSITORY_TOKEN_$(echo $repo_url_target | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')"
           echo "Extracting github secret ${secret_token_to_extract}"
           secret_token=$(echo $all_secrets | jq -r ".${secret_token_to_extract}")
-          if [ "null" = "${secret_token}" ]; then
+          if [ "null" = "${secret_token}" ] || [ -z "${secret_token}" ]; then
             echo "Secret ${secret_token_to_extract} not found !"
             echo "Please add secret ${secret_token_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
             exit 1
           fi
+          all_secrets=''
           conan remote add "FROM" "${from_repository_url}"
           conan remote login -p "${secret_token}" "FROM" "${secret_username}"
 
