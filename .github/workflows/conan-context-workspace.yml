@@ -111,6 +111,15 @@ jobs:
             exit 1
           fi
 
+      - name: Check if branch ${{ github.ref_name }} exists in ${{ matrix.collector }}
+        run: |
+          if gh api repos/${{ matrix.collector }}/branches/${{ github.ref_name }} --silent > /dev/null 2>&1; then
+            echo "Branch ${{ github.ref_name }} found in ${{ matrix.collector }}"
+          else
+            echo "Branch ${{ github.ref_name }} does not exists in ${{ matrix.collector }}"
+            exit 1
+          fi
+
       - name: Check if workflow ${{ env.TARGET_WORKFLOW }} exists in ${{ matrix.collector }}/${{ github.ref_name }}
         run: |
           wkf_exists=$(gh api repos/${{ matrix.collector }}/actions/workflows --jq ".workflows | map(select(.path == \".github/workflows/${TARGET_WORKFLOW}\")) | length > 0")
