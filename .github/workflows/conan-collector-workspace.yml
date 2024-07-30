@@ -92,7 +92,6 @@ jobs:
         run: |
           conan create . -pr:h ${{ matrix.profile }}
           conan install . -pr:h ${{ matrix.profile }} --deployer release  --deployer-folder=to_upload
-          conan remote remove FROM
 
       - name: Define release repository environment variables
         run: |
@@ -134,6 +133,7 @@ jobs:
               echo "Branch release/${{ inputs.release-name }} not found in ${URL_REL}, create it now"
               curl --fail -X POST -H "Authorization: token ${OWNER_GIT_TOKEN}" -d  "{\"ref\": \"refs/heads/release/${{ inputs.release-name }}\",\"sha\": \"$sha\"}" "https://api.github.com/repos/$URL_REL/git/refs"
             fi
+            conan download -r FROM "$package/$version"
             conan upload -r "${RELEASE_REPOSITORY_NAME}" "$package/$version" 
           done
 
