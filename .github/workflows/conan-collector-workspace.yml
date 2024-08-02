@@ -85,7 +85,7 @@ jobs:
             exit 1
           fi
           all_secrets=''
-          conan remote add "FROM" "${from_repository_url}"
+          conan remote add "FROM" "${from_repository_url}" --force
           conan remote login -p "${secret_token}" "FROM" "${secret_username}"
 
       - name: Generate dependencies for ${{ matrix.profile }}
