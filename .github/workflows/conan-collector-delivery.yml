@@ -55,7 +55,7 @@ jobs:
           # To change new line into litteral '\n'  for json
           key=$(echo "${{secrets.APT_GPG_KEY}}" | awk '{printf "%s\\n", $0}')
           # Create the nexus repository
-          curl -v --header "Content-Type: application/json" \
+          curl --fail --header "Content-Type: application/json" \
             -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}"  \
             ${{env.NEXUS_URL}}/service/rest/v1/repositories/apt/hosted/ \
             -d "{  \"name\": \"${{inputs.delivery-name}}\", \"online\": true, \"storage\": {\"blobStoreName\": \"nexus-bs-voqa-prd-apt\",\"strictContentTypeValidation\": true,\"writePolicy\": \"allow\"}, \
