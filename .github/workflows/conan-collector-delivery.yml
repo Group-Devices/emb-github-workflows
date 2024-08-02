@@ -18,6 +18,7 @@ permissions:
 env:
   CONAN_CONTEXT_PATH: ".conan-context/conan-context.yml"
   NEXUS_URL: "https://repository.it.voqa.com"
+  NEXUS_APT_REPO_BLOBSTORE: "nexus-bs-voqa-prd-apt"
 jobs:
   generate-conan-context:
     runs-on: voqa-ubuntu-22-04
@@ -36,6 +37,37 @@ jobs:
         uses: KUBA-EMB-CI/action-generate-conan-context@main
         with:
           json-secrets: ${{ toJson(secrets) }}
+  create-apt-repository:
+    runs-on: voqa-ubuntu-22-04
+    container:
+      image: docker-internal.it.voqa.com/kp6tab-compiler:main
+      credentials:
+        username: ${{ secrets.DOCKER_INTERNAL_REGISTRY_USERNAME}}
+        password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
+    outputs:
+      apt-repo-name: ${{ steps.set-apt-repo-name.outputs.apt-repo-name }}
+    steps:
+      - name: Set apt repository name
+        id: set-apt-repo-name
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            APT_REPO_NAME=voqa-apt
+            APT_REPO_WRITE_POLICY=allow_once
+          elif [ "${GITHUB_REF_TYPE}" = "branch" ] && [[ "${GITHUB_REF_NAME}" == "release/"* ]]; then
+            APT_REPO_NAME=voqa-apt-evt-1
+            APT_REPO_WRITE_POLICY=allow
+          elif [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            APT_REPO_NAME=voqa-apt-dev-1
+            APT_REPO_WRITE_POLICY=allow
+          else
+            echo "Not able to determine which repository to use"
+            exit 1
+          fi          
+          echo "Repository \"${APT_REPO_NAME}\" will be created with write policy \"${APT_REPO_WRITE_POLICY}\"" 
+          echo "APT_REPO_NAME=${APT_REPO_NAME}" >> "$GITHUB_ENV"
+          echo "APT_REPO_WRITE_POLICY=${APT_REPO_WRITE_POLICY}" >> "$GITHUB_ENV"
+          echo "apt-repo-name=${APT_REPO_NAME}" >> "$GITHUB_OUTPUT"
       - name: Create apt repository
         run: |
           # set distribution name to delivery name if empty
@@ -45,30 +77,29 @@ jobs:
           # Check if repo already exists
           response=$(curl -s -o output.json -w "%{http_code}\n" --header 'Content-Type: application/json' \
                       -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
-                      "https://repository.it.voqa.com/service/rest/v1/repositories/${REPO_NAME}")
-          if [ "${response}" == "200" ]; then
-            echo "Repository ${{inputs.delivery-name}} already exists. Skipping creation...."
-          elif [ "${response}" == "404" ]; then
-            echo "Repository ${{inputs.delivery-name}} does not exist. Creating it..."
+                      "${NEXUS_URL}/service/rest/v1/repositories/${APT_REPO_NAME}")
+          if [ "${response}" = "200" ]; then
+            echo "Repository ${APT_REPO_NAME} already exists. Skipping creation...."
+          elif [ "${response}" = "404" ]; then
+            echo "Repository ${APT_REPO_NAME} does not exist. Creating it..."
             echo "${{secrets.APT_GPG_KEY_BASE64}}" > gpg_key_base64.txt
             base64 -d gpg_key_base64.txt > gpg_key.pem
             # To change new line into litteral '\n'  for json
-            key=$(awk '{printf "%s\\n", $0} < gpg_key.pem')
+            key=$(awk '{printf "%s\\n", $0}' < gpg_key.pem)
             rm -f gpg_key_base64.txt gpg_key.pem
             # Create the nexus repository
             curl --fail --header "Content-Type: application/json" \
-              -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}"  \
-              ${{env.NEXUS_URL}}/service/rest/v1/repositories/apt/hosted/ \
-              -d "{  \"name\": \"${{inputs.delivery-name}}\", \"online\": true, \"storage\": {\"blobStoreName\": \"nexus-bs-voqa-prd-apt\",\"strictContentTypeValidation\": true,\"writePolicy\": \"allow\"}, \
-              \"apt\": {\"distribution\": \"${DISTRIBUTION_NAME}\"}, \"aptSigning\": { \"keypair\": \"${key}\",\"passphrase\": \"${{secrets.APT_GPG_PASSPHRASE}}\"}}"
+              -u "${{ secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM }}:${{ secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM }}"  \
+              "${NEXUS_URL}/service/rest/v1/repositories/apt/hosted/" \
+              -d "{  \"name\": \"${APT_REPO_NAME}\", \"online\": true, \"storage\": {\"blobStoreName\": \"${NEXUS_APT_REPO_BLOBSTORE}\",\"strictContentTypeValidation\": true,\"writePolicy\": \"${APT_REPO_WRITE_POLICY}\"}, \
+              \"apt\": {\"distribution\": \"${DISTRIBUTION_NAME}\"}, \"aptSigning\": { \"keypair\": \"${key}\",\"passphrase\": \"${{ secrets.APT_GPG_PASSPHRASE }}\"}}"
           else
-            echo "Repository ${{inputs.delivery-name}} cannot be found. But error is not 404."
+            echo "Repository ${APT_REPO_NAME} cannot be found. But error is not 404."
             echo "Http error: ${response}"
             echo "Response output:"
             cat output.json
             exit 1
           fi
-
   create-delivery:
     runs-on: voqa-ubuntu-22-04
     strategy:
@@ -80,6 +111,7 @@ jobs:
         username: ${{ secrets.DOCKER_INTERNAL_REGISTRY_USERNAME}}
         password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
     needs:
+      - create-apt-repository
       - generate-conan-context
     steps:
       - name: Checkout
@@ -107,9 +139,9 @@ jobs:
         run: |
           for deb in ./to_upload/*.deb; do 
             echo "uploading ${deb}"
-            curl --fail --silent -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
+            curl -v -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
               -H "Content-Type: multipart/form-data" --data-binary \
-              "@${deb}" ${{env.NEXUS_URL}}/repository/${{inputs.delivery-name}}/ 
+              "@${deb}" "${NEXUS_URL}/repository/${{ needs.create-apt-repository.outputs.apt-repo-name }}/" 
           done 
       - name: 'Upload bundle packages contents'
         uses: actions/upload-artifact@v4
