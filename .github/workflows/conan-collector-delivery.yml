@@ -52,14 +52,29 @@ jobs:
           DISTRIBUTION_NAME=${{inputs.distribution-name}}
           DELIVERY_NAME=${{inputs.delivery-name}}
           [ -z $DISTRIBUTION_NAME ] && DISTRIBUTION_NAME=$DELIVERY_NAME
-          # To change new line into litteral '\n'  for json
-          key=$(echo "${{secrets.APT_GPG_KEY}}" | awk '{printf "%s\\n", $0}')
-          # Create the nexus repository
-          curl --fail --header "Content-Type: application/json" \
-            -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}"  \
-            ${{env.NEXUS_URL}}/service/rest/v1/repositories/apt/hosted/ \
-            -d "{  \"name\": \"${{inputs.delivery-name}}\", \"online\": true, \"storage\": {\"blobStoreName\": \"nexus-bs-voqa-prd-apt\",\"strictContentTypeValidation\": true,\"writePolicy\": \"allow\"}, \
-            \"apt\": {\"distribution\": \"${DISTRIBUTION_NAME}\"}, \"aptSigning\": { \"keypair\": \"${key}\",\"passphrase\": \"${{secrets.APT_GPG_PASSPHRASE}}\"}}"
+          # Check if repo already exists
+          response=$(curl -s -o output.json -w "%{http_code}\n" --header 'Content-Type: application/json' \
+                      -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
+                      https://repository.it.voqa.com/service/rest/v1/repositories/${REPO_NAME})
+          if [ "$response" == "200" ]; then
+            echo "Repository '$REPO_NAME' already exists. Skipping creation...."
+          elif [ "$response" == "404" ]; then
+            echo "Repository '$REPO_NAME' does not exist. Creating it..."
+            # To change new line into litteral '\n'  for json
+            key=$(echo "${{secrets.APT_GPG_KEY}}" | awk '{printf "%s\\n", $0}')
+            # Create the nexus repository
+            curl --fail --header "Content-Type: application/json" \
+              -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}"  \
+              ${{env.NEXUS_URL}}/service/rest/v1/repositories/apt/hosted/ \
+              -d "{  \"name\": \"${{inputs.delivery-name}}\", \"online\": true, \"storage\": {\"blobStoreName\": \"nexus-bs-voqa-prd-apt\",\"strictContentTypeValidation\": true,\"writePolicy\": \"allow\"}, \
+              \"apt\": {\"distribution\": \"${DISTRIBUTION_NAME}\"}, \"aptSigning\": { \"keypair\": \"${key}\",\"passphrase\": \"${{secrets.APT_GPG_PASSPHRASE}}\"}}"
+          else
+            echo "Repository '$REPO_NAME' cannot be found. But error is not 404."
+            echo "Http error: $response"
+            echo "Response output:"
+            cat output.json
+            exit 1
+          fi
         # if: ${{ inputs.create-repository == true }}
 
   create-delivery:
