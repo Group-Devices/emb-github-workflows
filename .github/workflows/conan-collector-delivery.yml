@@ -1,0 +1,254 @@
+name: create delivery
+
+on:
+  workflow_dispatch:
+    inputs:
+      delivery-name:
+        description: 'delivery name'
+        required: true
+        type: string
+      create-repository:
+        description: 'create a new apt repository'
+        type: boolean
+        default: true
+        required: false
+      production:  
+        description: 'set the repository read only and create correspond git tagss'
+        type: boolean
+        default: false
+        required: false
+      distribution-name:
+        description: 'specific distribution name by default will use delivery-name'
+        type: string
+        default: ''
+        required: false
+permissions:
+  contents: write
+  checks: write
+env:
+  CONAN_CONTEXT_PATH: ".conan-context/conan-context.yml"
+  NEXUS_URL: "https://repository.it.voqa.com"
+  APT_GPG_PASSPHRASE: "passphrase"
+  APT_GPG_KEY: |
+    -----BEGIN PGP PRIVATE KEY BLOCK-----
+
+    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
+    t0yY5tBT7zK6tpirbFrVA+4ncaxB4lbI
+    =rAwM
+    -----END PGP PRIVATE KEY BLOCK-----
+
+jobs:
+  generate-conan-context:
+    runs-on: voqa-ubuntu-22-04
+    container:
+      image: docker-internal.it.voqa.com/kp6tab-compiler:main
+      credentials:
+        username: ${{ secrets.DOCKER_INTERNAL_REGISTRY_USERNAME}}
+        password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
+    outputs:
+      build-profile-list: ${{ steps.generate-conan-context.outputs.build-profile-list }}
+      collectors-list: ${{ steps.generate-conan-context.outputs.collectors-list }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate the conan context
+        id: generate-conan-context
+        uses: KUBA-EMB-CI/action-generate-conan-context@main
+        with:
+          json-secrets: ${{ toJson(secrets) }}
+      - name: Create apt repository
+        run: |
+          # set distribution name to delivery name if empty
+          DISTRIBUTION_NAME=${{inputs.distribution-name}}
+          DELIVERY_NAME=${{inputs.delivery-name}}
+          [ -z $DISTRIBUTION_NAME ] && DISTRIBUTION_NAME=$DELIVERY_NAME
+          # To change new line into litteral '\n'  for json
+          key=$(echo "${{env.APT_GPG_KEY}}" | awk '{printf "%s\\n", $0}')
+          # Create the nexus repository
+          curl -v --header "Content-Type: application/json" \
+            -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}"  \
+            ${{env.NEXUS_URL}}/service/rest/v1/repositories/apt/hosted/ \
+            -d "{  \"name\": \"${{inputs.delivery-name}}\", \"online\": true, \"storage\": {\"blobStoreName\": \"nexus-bs-voqa-prd-apt\",\"strictContentTypeValidation\": true,\"writePolicy\": \"allow\"}, \
+            \"apt\": {\"distribution\": \"${DISTRIBUTION_NAME}\"}, \"aptSigning\": { \"keypair\": \"${key}\",\"passphrase\": \"${{env.APT_GPG_PASSPHRASE}}\"}}"
+        # if: ${{ inputs.create-repository == true }}
+
+  create-delivery:
+    runs-on: voqa-ubuntu-22-04
+    strategy:
+      matrix:
+        profile: ${{ fromJson(needs.generate-conan-context.outputs.build-profile-list) }}
+    container:
+      image: docker-internal.it.voqa.com/${{ matrix.profile }}-compiler:main
+      credentials:
+        username: ${{ secrets.DOCKER_INTERNAL_REGISTRY_USERNAME}}
+        password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
+    needs:
+      - generate-conan-context
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: conan-context
+          path: .conan-context
+
+      - name: Configure conan
+        uses: KUBA-EMB-CI/action-configure-conan@main
+        with:
+          json-secrets: ${{ toJson(secrets) }}
+          conan-context-path: .conan-context/conan-context.yml
+      - name: Set safe git path
+        run: |
+          repo=$(basename ${{ github.repository }})
+          git config --global --add safe.directory "/__w/${repo}/${repo}"
+      - name: Generate dependencies for ${{ matrix.profile }}
+        run: |
+          conan create . -pr:h ${{ matrix.profile }}
+          conan install . -pr:h ${{ matrix.profile }} --deployer delivery  --deployer-folder=to_upload	
+      - name: Upload release
+        run: |
+          for deb in ./to_upload/*.deb; do 
+            echo "uploading ${deb}"
+            curl --fail --silent -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
+              -H "Content-Type: multipart/form-data" --data-binary \
+              "@${deb}" ${{env.NEXUS_URL}}/repository/${{inputs.delivery-name}}/ 
+          done 
+      - name: 'Upload bundle packages contents'
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-delivery-${{ matrix.profile }}
+          path: ./to_upload/packages.json
+      - name: Tag git sources
+        run: |
+          jq -c '.[] ' ./to_upload/packages.json | while read -r repository ; do \
+            url=$(echo "$repository" | jq -r .url) 
+            sha=$(echo "$repository" | jq -r .sha) 
+            URL_NOPRO=${url#*//}
+            URL_REL=${URL_NOPRO#*/}
+            OWNER=$(echo "${URL_REL}" | cut -d'/' -f1)
+            echo "Extracting github token secret for org ${OWNER}"
+            OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_RELEASE_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+            echo "Looking for matching github secret ${OWNER_GIT_TOKEN_SECRET}"
+            # shellcheck disable=SC2086
+            all_secrets='${{ tojson(secrets) }}'
+            OWNER_GIT_TOKEN=$(echo "$all_secrets" | jq -r ".${OWNER_GIT_TOKEN_SECRET}")
+            all_secrets=''
+            if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
+              echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
+              echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
+              exit 1
+            else
+              echo "Found secret ${OWNER_GIT_TOKEN_SECRET}"
+            fi
+            echo "${OWNER_GIT_TOKEN}" > mytoken.txt
+            gh auth login --with-token < mytoken.txt
+            rm mytoken.txt
+            if gh api "repos/${URL_REL}/tags/${{ inputs.delivery-name }}" --silent > /dev/null 2>&1; then
+              echo "Tag ${{ inputs.delivery-name }} already found in ${URL_REL}"
+            else
+              echo "Tag ${{ inputs.delivery-name }} not found in ${URL_REL}, create it now"
+              curl --silent -X POST -H "Authorization: token ${OWNER_GIT_TOKEN}" -d  "{\"ref\": \"refs/tags/${{ inputs.delivery-name }}\",\"sha\": \"$sha\"}" "https://api.github.com/repos/$URL_REL/git/refs"
+            fi
+          done
+
