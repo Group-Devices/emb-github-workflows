@@ -70,9 +70,7 @@ jobs:
           echo "apt-repo-name=${APT_REPO_NAME}" >> "$GITHUB_OUTPUT"
       - name: Create apt repository
         run: |
-          # set distribution name to delivery name if empty
           DISTRIBUTION_NAME=${{inputs.distribution-name}}
-          DELIVERY_NAME=${{inputs.delivery-name}}
           # Check if repo already exists
           response=$(curl -s -o output.json -w "%{http_code}\n" --header 'Content-Type: application/json' \
                       -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
@@ -172,11 +170,21 @@ jobs:
             echo "${OWNER_GIT_TOKEN}" > mytoken.txt
             gh auth login --with-token < mytoken.txt
             rm mytoken.txt
-            if gh api "repos/${URL_REL}/tags/${{ inputs.delivery-name }}" --silent > /dev/null 2>&1; then
+            if gh api "repos/${URL_REL}/git/refs/tags/${{ inputs.delivery-name }}" --silent > /dev/null 2>&1; then
               echo "Tag ${{ inputs.delivery-name }} already found in ${URL_REL}"
             else
               echo "Tag ${{ inputs.delivery-name }} not found in ${URL_REL}, create it now"
-              curl --silent -X POST -H "Authorization: token ${OWNER_GIT_TOKEN}" -d  "{\"ref\": \"refs/tags/${{ inputs.delivery-name }}\",\"sha\": \"$sha\"}" "https://api.github.com/repos/$URL_REL/git/refs"
+              tag_sha=$(gh api --method POST -H "Accept: application/vnd.github+json" \
+                                   -H "X-Github-Api-Version: 2022-11-28" \
+                                   "/repos/${URL_REL}/git/tags" \
+                                   -f "tag=${{ inputs.delivery-name }}" \
+                                   -f "message=Release ${{ inputs.delivery-name }}" \
+                                   -f "object=$sha" \
+                                   -f "type=commit" | jq -r '.sha')
+              gh api --method POST -H "Accept: application/vnd.github+json" \
+                                   -H "X-Github-Api-Version: 2022-11-28" \
+                                   "/repos/${URL_REL}/git/refs" \
+                                   -f "ref=refs/tags/${{ inputs.delivery-name }}" \
+                                   -f "sha=${tag_sha}"
             fi
           done
-
