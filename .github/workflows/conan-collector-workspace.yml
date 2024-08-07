@@ -65,6 +65,13 @@ jobs:
       - name: Add original repository in configuration
         run: |
           from_repository_url=$(yq -r ".from" "${CONAN_CONTEXT_PATH}")
+          if [ "null" = "${from_repository_url}" ] || [ -z "${from_repository_url}" ]; then
+            echo "from field not found in conan context !"
+            echo "Please add it !"
+            exit 1
+          else
+            echo "Will use from repository url: ${from_repository_url}"
+          fi
           echo "Add conan authentication for FROM repository"
           repo_url_target=$(echo "$from_repository_url" | sed -e 's/https:\/\///' -e 's/\/.*//')
           secret_username_to_extract=REPOSITORY_USERNAME_$(echo "$repo_url_target" | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')
@@ -102,9 +109,11 @@ jobs:
 
       - name: Upload release
         run: |
+          echo "Start upload release packages"
           jq -c '.[] ' ./to_upload/packages.json | while read -r repository ; do \
             package=$(echo "$repository" | jq -r .name)
-            version=$(echo "$repository" | jq -r .version) 
+            version=$(echo "$repository" | jq -r .version)
+            echo "Manage package ${package} with version ${version}"
             url=$(echo "$repository" | jq -r .url) 
             URL_NOPRO=${url#*//}
             URL_REL=${URL_NOPRO#*/}
@@ -133,7 +142,9 @@ jobs:
               echo "Branch release/${{ inputs.release-name }} not found in ${URL_REL}, create it now"
               curl --fail -X POST -H "Authorization: token ${OWNER_GIT_TOKEN}" -d  "{\"ref\": \"refs/heads/release/${{ inputs.release-name }}\",\"sha\": \"$sha\"}" "https://api.github.com/repos/$URL_REL/git/refs"
             fi
+            echo "Download package ${package} with version ${version}"
             conan download -r FROM "$package/$version"
+            echo "Upload package ${package} with version ${version} to ${RELEASE_REPOSITORY_NAME}"
             conan upload -r "${RELEASE_REPOSITORY_NAME}" "$package/$version" 
           done
 
