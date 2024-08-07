@@ -33,6 +33,7 @@ jobs:
   create-release:
     runs-on: voqa-ubuntu-22-04
     strategy:
+      fail-fast: false
       matrix:
         profile: ${{ fromJson(needs.generate-conan-context.outputs.build-profile-list) }}
     container:
