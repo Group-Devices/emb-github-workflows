@@ -1,27 +1,46 @@
-name: create delivery
+name: delivery
+
+run-name: Delivery
 
 on:
   workflow_call:
-    inputs:
-      delivery-name:
-        description: 'delivery name'
-        required: true
-        type: string
-      distribution-name:
-        description: 'specific distribution name by default will be voqa'
-        type: string
-        default: 'voqa'
-        required: false
-permissions:
-  contents: write
-  checks: write
+
 env:
   CONAN_CONTEXT_PATH: ".conan-context/conan-context.yml"
   NEXUS_URL: "https://repository.it.voqa.com"
   NEXUS_APT_REPO_BLOBSTORE: "nexus-bs-voqa-prd-apt"
+  NEXUS_APT_DISTRIBUTION_NAME: "voqa"
+
 jobs:
+  preflight-checks:
+    runs-on: ubuntu-latest
+    outputs:
+      delivery-name: ${{ steps.determine-delivery-name.outputs.delivery-name }}
+    steps:
+      - name: Fail if not a release branch or a tag
+        id: fail-if-not-release-branch
+        run: |
+          if [ "${GITHUB_REF_TYPE}" != "tag" ] && [[ "${GITHUB_REF_NAME}" != "release/"* ]]; then
+            echo "This workflow is intended to run on a release branch or a tag only"
+            exit 1
+          fi
+      - name: Determine delivery name
+        id: determine-delivery-name
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+              export DELIVERY_NAME="${GITHUB_REF_NAME}"
+          elif [ "${GITHUB_REF_TYPE}" = "branch" ] && [[ "${GITHUB_REF_NAME}" == "release/"* ]]; then
+              export DELIVERY_NAME="${GITHUB_REF_NAME#release/}"
+          else
+              echo "Not able to determine which delivery name to use for github ref type ${GITHUB_REF_TYPE} and github ref name ${GITHUB_REF_NAME}"
+              exit 1
+          fi
+          echo "delivery-name=${DELIVERY_NAME}" >> "$GITHUB_OUTPUT"
+  
   generate-conan-context:
     runs-on: voqa-ubuntu-22-04
+    needs: 
+      - preflight-checks
     container:
       image: docker-internal.it.voqa.com/kp6tab-compiler:main
       credentials:
@@ -37,8 +56,146 @@ jobs:
         uses: KUBA-EMB-CI/action-generate-conan-context@main
         with:
           json-secrets: ${{ toJson(secrets) }}
+
+#  create-conan-repository:
+#    runs-on: voqa-ubuntu-22-04
+#    needs:
+#      - generate-conan-context
+#    steps:
+#      - name: TODO Do the necessary stuff to create conan repository on nexus
+
+  upload-conan-release:
+    runs-on: voqa-ubuntu-22-04
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: ${{ fromJson(needs.generate-conan-context.outputs.build-profile-list) }}
+    container:
+      image: docker-internal.it.voqa.com/${{ matrix.profile }}-compiler:main
+      credentials:
+        username: ${{ secrets.DOCKER_INTERNAL_REGISTRY_USERNAME}}
+        password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
+    needs:
+      - preflight-checks
+      - generate-conan-context
+#      - create-conan-repository # when implemented
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: conan-context
+          path: .conan-context
+
+      - name: Set safe git path
+        run: |
+          repo=$(basename ${{ github.repository }})
+          git config --global --add safe.directory "/__w/${repo}/${repo}"
+
+      - name: Configure conan
+        uses: KUBA-EMB-CI/action-configure-conan@main
+        with:
+          json-secrets: ${{ toJson(secrets) }}
+          conan-context-path: .conan-context/conan-context.yml
+
+      - name: Add original repository in configuration
+        run: |
+          from_repository_url=$(yq -r ".from" "${CONAN_CONTEXT_PATH}")
+          if [ "null" = "${from_repository_url}" ] || [ -z "${from_repository_url}" ]; then
+            echo "from field not found in conan context !"
+            echo "Please add it !"
+            exit 1
+          else
+            echo "Will use from repository url: ${from_repository_url}"
+          fi
+          echo "Add conan authentication for FROM repository"
+          repo_url_target=$(echo "$from_repository_url" | sed -e 's/https:\/\///' -e 's/\/.*//')
+          secret_username_to_extract=REPOSITORY_USERNAME_$(echo "$repo_url_target" | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')
+          echo "Extracting github secret ${secret_username_to_extract}"
+          all_secrets='${{ tojson(secrets) }}'
+          secret_username=$(echo $all_secrets | jq -r ".${secret_username_to_extract}")
+          if [ "null" = "${secret_username}" ] || [ -z "${secret_username}" ]; then
+            echo "Secret ${secret_username_to_extract} not found !"
+            echo "Please add secret ${secret_username_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
+            exit 1
+          fi
+          secret_token_to_extract=REPOSITORY_TOKEN_$(echo "$repo_url_target" | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')
+          echo "Extracting github secret ${secret_token_to_extract}"
+          secret_token=$(echo $all_secrets | jq -r ".${secret_token_to_extract}")
+          if [ "null" = "${secret_token}" ] || [ -z "${secret_token}" ]; then
+            echo "Secret ${secret_token_to_extract} not found !"
+            echo "Please add secret ${secret_token_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
+            exit 1
+          fi
+          all_secrets=''
+          conan remote add "FROM" "${from_repository_url}" --force
+          conan remote login -p "${secret_token}" "FROM" "${secret_username}"
+
+      - name: Generate dependencies for ${{ matrix.profile }}
+        run: |
+          conan create . -pr:h ${{ matrix.profile }}
+          conan install . -pr:h ${{ matrix.profile }} --deployer release  --deployer-folder=to_upload
+
+      - name: Define release repository environment variables
+        run: |
+          upload_repository=$(yq -r ".upload" "${CONAN_CONTEXT_PATH}")
+          upload_repository_url=$(yq -r ".repositories.${upload_repository}" "${CONAN_CONTEXT_PATH}")
+          echo "RELEASE_REPOSITORY_NAME=${upload_repository}" >> "$GITHUB_ENV"
+          echo "RELEASE_REPOSITORY_URL=${upload_repository_url}"  >> "$GITHUB_ENV"
+
+      - name: Upload release
+        run: |
+          DELIVERY_NAME=${{ needs.preflight-checks.outputs.delivery-name }}
+          echo "Start upload release packages"
+          jq -c '.[] ' ./to_upload/packages.json | while read -r repository ; do \
+            package=$(echo "$repository" | jq -r .name)
+            version=$(echo "$repository" | jq -r .version)
+            echo "Manage package ${package} with version ${version}"
+            url=$(echo "$repository" | jq -r .url) 
+            URL_NOPRO=${url#*//}
+            URL_REL=${URL_NOPRO#*/}
+            sha=$(echo "$repository" | jq -r .sha)
+            OWNER=$(echo "${URL_REL}" | cut -d'/' -f1)
+            echo "Extracting github token secret for org ${OWNER}"
+            OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_RELEASE_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+            echo "Looking for matching github secret ${OWNER_GIT_TOKEN_SECRET}"
+            # shellcheck disable=SC2086
+            all_secrets='${{ tojson(secrets) }}'
+            OWNER_GIT_TOKEN=$(echo "$all_secrets" | jq -r ".${OWNER_GIT_TOKEN_SECRET}")
+            all_secrets=''
+            if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
+              echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
+              echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
+              exit 1
+            else
+              echo "Found secret ${OWNER_GIT_TOKEN_SECRET}"
+            fi
+            echo "${OWNER_GIT_TOKEN}" > mytoken.txt
+            gh auth login --with-token < mytoken.txt
+            rm mytoken.txt
+            if gh api "repos/${URL_REL}/branches/release/${DELIVERY_NAME}" --silent > /dev/null 2>&1; then
+              echo "Branch release/${DELIVERY_NAME} already found in ${URL_REL}"
+            else
+              echo "Branch release/${DELIVERY_NAME} not found in ${URL_REL}, create it now"
+              curl --fail -X POST -H "Authorization: token ${OWNER_GIT_TOKEN}" -d  "{\"ref\": \"refs/heads/release/${DELIVERY_NAME}\",\"sha\": \"$sha\"}" "https://api.github.com/repos/$URL_REL/git/refs"
+            fi
+            echo "Download package ${package} with version ${version}"
+            conan download -r FROM "$package/$version"
+            echo "Upload package ${package} with version ${version} to ${RELEASE_REPOSITORY_NAME}"
+            conan upload -r "${RELEASE_REPOSITORY_NAME}" "$package/$version" 
+          done
+
+      - name: 'Upload bundle packages contents'
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-release-${{ matrix.profile }}
+          path: ./to_upload/packages.json
+
   create-apt-repository:
     runs-on: voqa-ubuntu-22-04
+    needs:
+      - upload-conan-release
     container:
       image: docker-internal.it.voqa.com/kp6tab-compiler:main
       credentials:
@@ -61,17 +218,16 @@ jobs:
             APT_REPO_NAME=voqa-apt-dev-1
             APT_REPO_WRITE_POLICY=allow
           else
-            echo "Not able to determine which repository to use"
+            echo "Not able to determine which repository to use for github ref type ${GITHUB_REF_TYPE} and github ref name ${GITHUB_REF_NAME}"
             exit 1
           fi          
           echo "Repository \"${APT_REPO_NAME}\" will be created with write policy \"${APT_REPO_WRITE_POLICY}\"" 
           echo "APT_REPO_NAME=${APT_REPO_NAME}" >> "$GITHUB_ENV"
           echo "APT_REPO_WRITE_POLICY=${APT_REPO_WRITE_POLICY}" >> "$GITHUB_ENV"
           echo "apt-repo-name=${APT_REPO_NAME}" >> "$GITHUB_OUTPUT"
-      - name: Create apt repository
+
+      - name: Ensure apt repository exists
         run: |
-          DISTRIBUTION_NAME=${{inputs.distribution-name}}
-          # Check if repo already exists
           response=$(curl -s -o output.json -w "%{http_code}\n" --header 'Content-Type: application/json' \
                       -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
                       "${NEXUS_URL}/service/rest/v1/repositories/${APT_REPO_NAME}")
@@ -89,7 +245,7 @@ jobs:
               -u "${{ secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM }}:${{ secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM }}"  \
               "${NEXUS_URL}/service/rest/v1/repositories/apt/hosted/" \
               -d "{  \"name\": \"${APT_REPO_NAME}\", \"online\": true, \"storage\": {\"blobStoreName\": \"${NEXUS_APT_REPO_BLOBSTORE}\",\"strictContentTypeValidation\": true,\"writePolicy\": \"${APT_REPO_WRITE_POLICY}\"}, \
-              \"apt\": {\"distribution\": \"${DISTRIBUTION_NAME}\"}, \"aptSigning\": { \"keypair\": \"${key}\",\"passphrase\": \"${{ secrets.APT_GPG_PASSPHRASE }}\"}}"
+              \"apt\": {\"distribution\": \"${NEXUS_APT_DISTRIBUTION_NAME}\"}, \"aptSigning\": { \"keypair\": \"${key}\",\"passphrase\": \"${{ secrets.APT_GPG_PASSPHRASE }}\"}}"
           else
             echo "Repository ${APT_REPO_NAME} cannot be found. But error is not 404."
             echo "Http error: ${response}"
@@ -97,9 +253,11 @@ jobs:
             cat output.json
             exit 1
           fi
-  create-delivery:
+
+  upload-apt-packages:
     runs-on: voqa-ubuntu-22-04
     strategy:
+      fail-fast: false
       matrix:
         profile: ${{ fromJson(needs.generate-conan-context.outputs.build-profile-list) }}
     container:
@@ -108,8 +266,9 @@ jobs:
         username: ${{ secrets.DOCKER_INTERNAL_REGISTRY_USERNAME}}
         password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
     needs:
-      - create-apt-repository
       - generate-conan-context
+      - preflight-checks
+      - create-apt-repository
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -146,7 +305,9 @@ jobs:
           name: packages-delivery-${{ matrix.profile }}
           path: ./to_upload/packages.json
       - name: Tag git sources
+        if: ${{ github.ref_type == 'tag' }}
         run: |
+          DELIVERY_NAME=${{ needs.preflight-checks.outputs.delivery-name }}
           jq -c '.[] ' ./to_upload/packages.json | while read -r repository ; do \
             url=$(echo "$repository" | jq -r .url) 
             sha=$(echo "$repository" | jq -r .sha) 
@@ -170,21 +331,21 @@ jobs:
             echo "${OWNER_GIT_TOKEN}" > mytoken.txt
             gh auth login --with-token < mytoken.txt
             rm mytoken.txt
-            if gh api "repos/${URL_REL}/git/refs/tags/${{ inputs.delivery-name }}" --silent > /dev/null 2>&1; then
-              echo "Tag ${{ inputs.delivery-name }} already found in ${URL_REL}"
+            if gh api "repos/${URL_REL}/git/refs/tags/${DELIVERY_NAME}" --silent > /dev/null 2>&1; then
+              echo "Tag ${DELIVERY_NAME} already found in ${URL_REL}"
             else
-              echo "Tag ${{ inputs.delivery-name }} not found in ${URL_REL}, create it now"
+              echo "Tag ${DELIVERY_NAME} not found in ${URL_REL}, create it now"
               tag_sha=$(gh api --method POST -H "Accept: application/vnd.github+json" \
                                    -H "X-Github-Api-Version: 2022-11-28" \
                                    "/repos/${URL_REL}/git/tags" \
-                                   -f "tag=${{ inputs.delivery-name }}" \
-                                   -f "message=Release ${{ inputs.delivery-name }}" \
+                                   -f "tag=${DELIVERY_NAME}" \
+                                   -f "message=Release ${DELIVERY_NAME}" \
                                    -f "object=$sha" \
                                    -f "type=commit" | jq -r '.sha')
               gh api --method POST -H "Accept: application/vnd.github+json" \
                                    -H "X-Github-Api-Version: 2022-11-28" \
                                    "/repos/${URL_REL}/git/refs" \
-                                   -f "ref=refs/tags/${{ inputs.delivery-name }}" \
+                                   -f "ref=refs/tags/${DELIVERY_NAME}" \
                                    -f "sha=${tag_sha}"
             fi
           done

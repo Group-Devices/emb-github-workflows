@@ -70,7 +70,7 @@ jobs:
       matrix:
         collector: ${{ fromJson(needs.extract-collectors.outputs.collectors-list) }}
     env:
-      TARGET_WORKFLOW: "clone-workspace.yml"
+      TARGET_WORKFLOW: "delivery.yml"
     steps:
       - name: Extract release name
         run: |
@@ -122,7 +122,8 @@ jobs:
 
       - name: Check if workflow ${{ env.TARGET_WORKFLOW }} exists in ${{ matrix.collector }}/${{ github.ref_name }}
         run: |
-          wkf_exists=$(gh api repos/${{ matrix.collector }}/actions/workflows --jq ".workflows | map(select(.path == \".github/workflows/${TARGET_WORKFLOW}\")) | length > 0")
+          wkf_exists=$(gh api repos/${{ matrix.collector }}/contents/.github/workflows/${{ env.TARGET_WORKFLOW }}?ref=${{ github.ref_name }} --silent > /dev/null 2>&1)
+
           if [ "$wkf_exists" == "true" ]; then
             echo "Workflow ${TARGET_WORKFLOW} exists in ${{ matrix.collector }}."
           else
@@ -134,5 +135,4 @@ jobs:
         run: |
           gh workflow run "${TARGET_WORKFLOW}" \
             --repo "${{ matrix.collector }}" \
-            --ref "${{ github.ref_name }}" \
-            --field release-name="${RELEASE_NAME}"
+            --ref "${{ github.ref_name }}"
