@@ -127,8 +127,14 @@ jobs:
             echo "Conan upload to repository ${upload}"
           fi
           if [ "${{ inputs.build-missing }}" = "true" ]; then
-            echo "Upload all packages because build missing is true"
-            conan upload -r "${upload}" "*" --confirm          
+            # shall to correspond to collector package
+            echo "Generate bundle packages list"
+            conan install . -pr:h ${{ matrix.profile }} --deployer release  --deployer-folder=to_upload
+            jq -c '.[] ' ./to_upload/packages.json | while read -r repository ; do \
+              package=$(echo "$repository" | jq -r .name)
+              echo "Uploading  ${package} into ${upload}"
+              conan upload -r "${upload}" "${package}" --confirm            
+            done
           else
             repo=$(basename ${{ github.repository }})
             echo "Upload only package ${repo} because build missing is false"
