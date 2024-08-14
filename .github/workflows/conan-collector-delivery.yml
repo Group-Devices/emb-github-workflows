@@ -200,8 +200,14 @@ jobs:
           name: packages-release-${{ matrix.profile }}
           path: ./to_upload/packages.json
 
+      - name: 'Get deliverable staus of the bundle' 
+        run: | 
+          deliverable=$(yq -r ".product" "${CONAN_CONTEXT_PATH}")
+          echo "IS_DELIVERABLE=$deliverable" >> "$GITHUB_ENV"
+      
   create-apt-repository:
     runs-on: voqa-ubuntu-22-04
+    if: ${{ env.IS_DELIVERABLE }}  
     needs:
       - upload-conan-release
     container:
@@ -264,6 +270,7 @@ jobs:
 
   upload-apt-packages:
     runs-on: voqa-ubuntu-22-04
+    if: ${{ env.IS_DELIVERABLE }}  
     strategy:
       fail-fast: false
       matrix:
