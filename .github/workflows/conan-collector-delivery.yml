@@ -177,7 +177,7 @@ jobs:
             if gh api "repos/${URL_REL}/branches/release/${DELIVERY_NAME}" --silent > /dev/null 2>&1; then
               echo "Branch release/${DELIVERY_NAME} already found in ${URL_REL}"
               curl --fail  --silent -H "Authorization: token ${OWNER_GIT_TOKEN}"  "https://api.github.com/repos/$URL_REL/git/refs/heads/release/${DELIVERY_NAME" -o getref.json 
-              prev_sha=$(jq -r -c  .object.sha getref.json)
+              prev_sha=$(jq -r -c  ".object.sha" getref.json)
               if [ "${prev_sha" != "${sha}" ]; then 
                 echo "Changed branch from ${prev_sha} to ${sha}"
                 # will only accept fast forard merge
