@@ -207,7 +207,7 @@ jobs:
       
   create-apt-repository:
     runs-on: voqa-ubuntu-22-04
-    if: env.IS_DELIVERABLE   
+    if: github.IS_DELIVERABLE   
     needs:
       - upload-conan-release
     container:
@@ -270,7 +270,7 @@ jobs:
 
   upload-apt-packages:
     runs-on: voqa-ubuntu-22-04
-    if: env.IS_DELIVERABLE
+    if: github.IS_DELIVERABLE
     strategy:
       fail-fast: false
       matrix:
