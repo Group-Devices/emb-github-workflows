@@ -218,7 +218,7 @@ jobs:
     runs-on: voqa-ubuntu-22-04
     needs:
       - upload-conan-release
-    if: needs.upload-conan-release.outputs.deliverable == "true"
+    if: needs.upload-conan-release.outputs.deliverable == 'true'
     container:
       image: docker-internal.it.voqa.com/kp6tab-compiler:main
       credentials:
