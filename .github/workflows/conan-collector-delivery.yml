@@ -134,17 +134,19 @@ jobs:
           conan remote add "FROM" "${from_repository_url}" --force
           conan remote login -p "${secret_token}" "FROM" "${secret_username}"
 
-      - name: Generate dependencies for ${{ matrix.profile }}
-        run: |
-          conan create . -pr:h ${{ matrix.profile }}
-          conan install . -pr:h ${{ matrix.profile }} --deployer release  --deployer-folder=to_upload
-
       - name: Define release repository environment variables
         run: |
           upload_repository=$(yq -r ".upload" "${CONAN_CONTEXT_PATH}")
           upload_repository_url=$(yq -r ".repositories.${upload_repository}" "${CONAN_CONTEXT_PATH}")
           echo "RELEASE_REPOSITORY_NAME=${upload_repository}" >> "$GITHUB_ENV"
           echo "RELEASE_REPOSITORY_URL=${upload_repository_url}"  >> "$GITHUB_ENV"
+
+      - name: Generate dependencies for ${{ matrix.profile }}
+        run: |
+          conan remote disable "${RELEASE_REPOSITORY_NAME}" 
+          conan create . -pr:h ${{ matrix.profile }}
+          conan install . -pr:h ${{ matrix.profile }} --deployer release  --deployer-folder=to_upload
+          conan remote enable "${RELEASE_REPOSITORY_NAME}" 
 
       - name: Upload release
         run: |
@@ -184,7 +186,7 @@ jobs:
                  echo "Unchanged branch from ${prev_sha} to ${sha}"
               else
                  echo "Changed branch from ${prev_sha} to ${sha}"
-                 curl --fail -X PATCH -H "Authorization: token ${OWNER_GIT_TOKEN}" -d  "{\"sha\": \"$sha\"}" "https://api.github.com/repos/$URL_REL/git/refs/release/${DELIVERY_NAME}"
+                 curl --fail -X PATCH -H "Authorization: token ${OWNER_GIT_TOKEN}" -d  "{\"sha\": \"$sha\"}" "https://api.github.com/repos/$URL_REL/git/refs/heads/release/${DELIVERY_NAME}"
               fi
             else
               echo "Branch release/${DELIVERY_NAME} not found in ${URL_REL}, create it now"
