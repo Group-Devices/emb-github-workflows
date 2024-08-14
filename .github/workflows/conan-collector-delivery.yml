@@ -178,12 +178,6 @@ jobs:
               echo "Branch release/${DELIVERY_NAME} already found in ${URL_REL}"
               curl --fail  --silent -H "Authorization: token ${OWNER_GIT_TOKEN}"  "https://api.github.com/repos/$URL_REL/git/refs/heads/release/${DELIVERY_NAME" -o getref.json 
               prev_sha=$(jq -r -c  ".object.sha" getref.json)
-              if [ "${prev_sha" != "${sha}" ]; then 
-                echo "Changed branch from ${prev_sha} to ${sha}"
-                curl --fail -X PATCH -H "Authorization: token ${OWNER_GIT_TOKEN}" -d  "{\"ref\": \"refs/heads/release/${DELIVERY_NAME}\",\"sha\": \"$sha\"}" "https://api.github.com/repos/$URL_REL/git/refs"
-              else
-                echo "Unchanged branch"
-              fi
             else
               echo "Branch release/${DELIVERY_NAME} not found in ${URL_REL}, create it now"
               curl --fail -X POST -H "Authorization: token ${OWNER_GIT_TOKEN}" -d  "{\"ref\": \"refs/heads/release/${DELIVERY_NAME}\",\"sha\": \"$sha\"}" "https://api.github.com/repos/$URL_REL/git/refs"
