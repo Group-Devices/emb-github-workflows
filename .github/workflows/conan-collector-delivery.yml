@@ -75,6 +75,8 @@ jobs:
       credentials:
         username: ${{ secrets.DOCKER_INTERNAL_REGISTRY_USERNAME}}
         password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
+    outputs:
+      deliverable: ${{ steps.step_delivery.outputs.deliverable }}
     needs:
       - preflight-checks
       - generate-conan-context
@@ -179,7 +181,7 @@ jobs:
               curl --fail  --silent -H "Authorization: token ${OWNER_GIT_TOKEN}"  "https://api.github.com/repos/$URL_REL/git/refs/heads/release/${DELIVERY_NAME}" -o ./getref.json
               prev_sha=$(jq -r -c ".object.sha" ./getref.json)
               if [ "${prev_sha}" = "${sha}" ]; then 
-                 echo "Unchanged branch"
+                 echo "Unchanged branch from ${prev_sha} to ${sha}"
               else
                  echo "Changed branch from ${prev_sha} to ${sha}"
                  curl --fail -X PATCH -H "Authorization: token ${OWNER_GIT_TOKEN}" -d  "{\"sha\": \"$sha\"}" "https://api.github.com/repos/$URL_REL/git/refs/release/${DELIVERY_NAME}"
@@ -200,10 +202,17 @@ jobs:
           name: packages-release-${{ matrix.profile }}
           path: ./to_upload/packages.json
 
+      - name: 'Get deliverable staus of the bundle' 
+        id: step_delivery
+        run: | 
+          deliverable=$(yq -r ".product" "${CONAN_CONTEXT_PATH}")
+          echo "deliverable=$deliverable" >> "$GITHUB_OUTPUT"
+      
   create-apt-repository:
     runs-on: voqa-ubuntu-22-04
     needs:
       - upload-conan-release
+    if: needs.upload-conan-release.outputs.deliverable
     container:
       image: docker-internal.it.voqa.com/kp6tab-compiler:main
       credentials:
