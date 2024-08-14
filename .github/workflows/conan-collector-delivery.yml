@@ -181,7 +181,7 @@ jobs:
               curl --fail  --silent -H "Authorization: token ${OWNER_GIT_TOKEN}"  "https://api.github.com/repos/$URL_REL/git/refs/heads/release/${DELIVERY_NAME}" -o ./getref.json
               prev_sha=$(jq -r -c ".object.sha" ./getref.json)
               if [ "${prev_sha}" = "${sha}" ]; then 
-                 echo "Unchanged branch"
+                 echo "Unchanged branch from ${prev_sha} to ${sha}"
               else
                  echo "Changed branch from ${prev_sha} to ${sha}"
                  curl --fail -X PATCH -H "Authorization: token ${OWNER_GIT_TOKEN}" -d  "{\"sha\": \"$sha\"}" "https://api.github.com/repos/$URL_REL/git/refs/release/${DELIVERY_NAME}"
