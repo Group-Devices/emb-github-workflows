@@ -142,7 +142,7 @@ jobs:
           : # By default use upload url
           from_repository_url=${upload_repository_url}
           : # if a clone is asked use from url specified
-          [ -f ${CLONE_PATH} ] && from_repository_url=$(yq -r ".from" "${CLONE_PATH}")
+          [ -f "${CLONE_PATH}" ] && from_repository_url=$(yq -r ".from" "${CLONE_PATH}")
           if [ "null" = "${upload_repository_url}" ] || [ -z "${from_repository_url}" ]; then
             echo "upload field not found in conan context !"
             echo "Please add it !"
@@ -288,7 +288,7 @@ jobs:
           echo "collector requires ${requires}"
           ${{ env.CONAN }} remote disable "${{ needs.extract-collectors.outputs.release_repo_name}}" 
           ${{ env.CONAN }} install ${requires} -pr:h ${{ matrix.profile }} --deployer release --deployer-folder=to_conan
-          if [ ${{needs.extract-collectors.outputs.deliverable}} = 'true' ]; then
+          if [ "${{needs.extract-collectors.outputs.deliverable}}" = 'true' ]; then
             ${{ env.CONAN }} install ${requires} -pr:h ${{ matrix.profile }} --deployer delivery --deployer-folder=to_apt
           fi  
           ${{ env.CONAN }} remote enable "${{ needs.extract-collectors.outputs.release_repo_name}}" 
