@@ -298,14 +298,13 @@ jobs:
         run: |
           DELIVERY_NAME=${{ needs.preflight-checks.outputs.delivery-name }}
           echo "Start upload release packages"
-          echo "Generated at $(date)\n\n"> README.md
+          printf "Generated at $(date)\n\n"> README.md
           jq -c '.[] ' ./to_conan/packages.json | while read -r repository ; do \
             package=$(echo "$repository" | jq -r .name)
             version=$(echo "$repository" | jq -r .version)
             sha=$(echo "$repository" | jq -r .sha)
             url=$(echo "$repository" | jq -r .url) 
             name=$(echo "$repository" | jq -r .name) 
-            bundle=$(echo "$repository" | jq -r .bundle)
             echo "Manage package ${package} with version ${version}"
             URL_NOPRO=${url#*//}
             URL_REL=${URL_NOPRO#*/}
@@ -358,7 +357,7 @@ jobs:
 
             : # ---------- TAGGING ---------------------------------------
             : # also tag if we have created a tag
-            if [ ${GITHUB_REF_TYPE} = 'tag' ]; then
+            if [ "${GITHUB_REF_TYPE}" = 'tag' ]; then
               if gh api "repos/${URL_REL}/git/refs/tags/${DELIVERY_NAME}" --silent > /dev/null 2>&1; then
                 echo "Tag ${DELIVERY_NAME} already found in ${URL_REL}"
               else
@@ -380,7 +379,7 @@ jobs:
             WORKFLOW_FILE="ci.yaml"
             is_collector=$(yq -r ".build.collectors | any_c(. == \"${URL_REL}\")" ./conan-context.yml)
             [ "${is_collector}" = "true" ] && WORKFLOW_FILE="delivery.yml"
-            echo "[${name}](https://github.com/${URL_REL}/tree/${GITHUB_REF_NAME}) ![${name}](https://github.com/${URL_REL}/actions/workflows/${WORKFLOW_FILE}/badge.svg?branch=release/${DELIVERY_NAME})\n" >> README.md
+            printf "[${name}](https://github.com/${URL_REL}/tree/${GITHUB_REF_NAME}) ![${name}](https://github.com/${URL_REL}/actions/workflows/${WORKFLOW_FILE}/badge.svg?branch=release/${DELIVERY_NAME})\n" >> README.md
           done
 
           # ---------- DASHBOARD ---------------------------------------
@@ -402,7 +401,7 @@ jobs:
           echo "CMD gh api -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28'  /repos/${GITHUB_REPOSITORY}/contents/README.md?ref=refs/heads/release/$DELIVERY_NAME "
           SHA=$(gh api -H 'Accept: application/vnd.github+json' \
                 -H 'X-GitHub-Api-Version: 2022-11-28' \
-                /repos/${GITHUB_REPOSITORY}/contents/README.md?ref=refs/heads/release/$DELIVERY_NAME | jq -r '.sha')
+                "/repos/${GITHUB_REPOSITORY}/contents/README.md?ref=refs/heads/release/$DELIVERY_NAME" | jq -r '.sha')
           gh api --method PUT /repos/${GITHUB_REPOSITORY}/contents/README.md \
               --field message="$MESSAGE" \
               --field content="$CONTENT" \
