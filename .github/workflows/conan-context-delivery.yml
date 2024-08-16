@@ -5,8 +5,39 @@ on:
 
 env:
   CONAN_CONTEXT_PATH: conan-context.yml
+  CLONE_PATH: clone.yml
+  CONAN: "conan"   # echo conan for a dry run
 
 jobs:
+  preflight-checks:
+    runs-on: ubuntu-latest
+    outputs:
+      delivery-name: ${{ steps.determine-delivery-name.outputs.delivery-name }}
+    steps:
+      - name: Fail if not a release branch or a tag
+        id: fail-if-not-release-branch
+        run: |
+          if [ "${GITHUB_REF_TYPE}" != "tag" ] && [[ "${GITHUB_REF_NAME}" != "release/"* ]]; then
+            echo "This workflow is intended to run on a release branch or a tag only"
+            exit 1
+          fi
+
+      # TODO to be improved when we have conan repositories creation
+      #       to get delivery name  more dynamically
+      - name: Determine delivery name
+        id: determine-delivery-name
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+              export DELIVERY_NAME="${GITHUB_REF_NAME}"
+          elif [ "${GITHUB_REF_TYPE}" = "branch" ] && [[ "${GITHUB_REF_NAME}" == "release/"* ]]; then
+              export DELIVERY_NAME="${GITHUB_REF_NAME#release/}"
+          else
+              echo "Not able to determine which delivery name to use for github ref type ${GITHUB_REF_TYPE} and github ref name ${GITHUB_REF_NAME}"
+              exit 1
+          fi
+          echo "delivery-name=${DELIVERY_NAME} ref : ${GITHUB_REF_NAME}"
+          echo "delivery-name=${DELIVERY_NAME}" >> "$GITHUB_OUTPUT"
+
   check-conan-context:
     runs-on: ubuntu-latest
     steps:
@@ -43,6 +74,12 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       collectors-list: ${{ steps.generate-collectors-list.outputs.list }}
+      build-profiles-list: ${{ steps.generate-build-profiles-list.outputs.list }}
+      deliverable: ${{ steps.generate-delivery.outputs.deliverable }}
+      from_repository_url: ${{ steps.generate-release-info.outputs.from_repository_url }}
+      release_name: ${{ steps.generate-release-info.outputs.release_name }}
+      release_repo_name: ${{ steps.generate-release-info.outputs.release_repo_name }}
+      release_repo_url: ${{ steps.generate-release-info.outputs.release_repo_url }}
     needs:
       - check-conan-context
     steps:
@@ -61,16 +98,404 @@ jobs:
             echo "File: ${CONAN_CONTEXT_PATH} - Field '$FIELD' does not exist or is not an array."
             exit 1
           fi
+  
+      - name: 'Extract the build profiles list'
+        id: generate-build-profiles-list
+        shell: bash
+        run: |
+          FIELD="build.profiles"
+          result=$(yq eval ".${FIELD} | type" "${CONAN_CONTEXT_PATH}")
+          if [ "$result" = "!!seq" ]; then
+            if [ -n "$APPEND_DEFAULT_PROFILE" ] && [ "$APPEND_DEFAULT_PROFILE" = "true" ]; then
+              echo "list=$(yq -r ".${FIELD}" "${CONAN_CONTEXT_PATH}" -o=json | jq -c ". + [\"default\"]")" >> "$GITHUB_OUTPUT"
+            else
+              echo "list=$(yq -r ".${FIELD}" "${CONAN_CONTEXT_PATH}" -o=json | jq -c)" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "File: ${CONAN_CONTEXT_PATH} - Field '$FIELD' does not exist or is not an array."
+            exit 1
+          fi
+          
+      - name: 'Extract deliverable status of the bundle' 
+        id: generate-delivery
+        run: | 
+          deliverable=$(yq -r ".product" "${CONAN_CONTEXT_PATH}")
+          if [ "true" != "${deliverable}" ]; then
+            deliverable="false"
+          fi  
+          echo "!!!! deliverable=$deliverable !!!!!!" 
+          echo "deliverable=$deliverable" >> "$GITHUB_OUTPUT"   
+          
+      - name: Extract release info
+        id: generate-release-info
+        shell: bash
+        run: |
+          release_name=$(basename "${{ github.ref }}")
+          echo "Release name: ${release_name}"
+          echo "release_name=${release_name}" >> "$GITHUB_OUTPUT"
+          upload_repository=$(yq -r ".upload" "${CONAN_CONTEXT_PATH}")
+          echo "release_repo_name=${upload_repository}"
+          echo "release_repo_name=${upload_repository}" >> "$GITHUB_OUTPUT"
+          upload_repository_url=$(yq -r ".repositories.${upload_repository}" "${CONAN_CONTEXT_PATH}")
+          echo "release_repo_url=${upload_repository_url}"  >> "$GITHUB_OUTPUT"
 
-  clone-collector-workspace:
+          : # By default use upload url
+          from_repository_url=${upload_repository_url}
+          : # if a clone is asked use from url specified
+          [ -f ${CLONE_PATH} ] && from_repository_url=$(yq -r ".from" "${CLONE_PATH}")
+          if [ "null" = "${upload_repository_url}" ] || [ -z "${from_repository_url}" ]; then
+            echo "upload field not found in conan context !"
+            echo "Please add it !"
+            exit 1
+          else
+            echo "Will use upload repository url: ${upload_repository_url}"
+            echo "Will use from repository url: ${from_repository_url}"
+          fi     
+          echo "from_repository_url=$from_repository_url" >> "$GITHUB_OUTPUT"   
+
+  apt-preparation:
     runs-on: ubuntu-latest
     needs:
       - extract-collectors
+    outputs:
+      apt-repo-name: ${{ steps.set-apt-repo-name.outputs.apt-repo-name }}  
+    steps:       
+      - name: Set apt repository name
+        id: set-apt-repo-name
+        shell: bash
+        run: |
+            if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+              APT_REPO_NAME=voqa-apt
+              APT_REPO_WRITE_POLICY=allow_once
+            elif [ "${GITHUB_REF_TYPE}" = "branch" ] && [[ "${GITHUB_REF_NAME}" == "release/"* ]]; then
+              APT_REPO_NAME=voqa-apt-evt-1
+              APT_REPO_WRITE_POLICY=allow
+            elif [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+              APT_REPO_NAME=voqa-apt-dev-1
+              APT_REPO_WRITE_POLICY=allow
+            else
+              echo "Not able to determine which repository to use for github ref type ${GITHUB_REF_TYPE} and github ref name ${GITHUB_REF_NAME}"
+              exit 1
+            fi          
+            echo "Repository \"${APT_REPO_NAME}\" will be created with write policy \"${APT_REPO_WRITE_POLICY}\"" 
+            echo "APT_REPO_NAME=${APT_REPO_NAME}" >> "$GITHUB_ENV"
+            echo "APT_REPO_WRITE_POLICY=${APT_REPO_WRITE_POLICY}" >> "$GITHUB_ENV"
+            echo "apt-repo-name=${APT_REPO_NAME}" >> "$GITHUB_OUTPUT"
+  
+      - name: Ensure apt repository exists
+        if: needs.extract-collectors.outputs.deliverable == 'true'
+        run: |
+            response=$(curl -s -o output.json -w "%{http_code}\n" --header 'Content-Type: application/json' \
+                        -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
+                        "${NEXUS_URL}/service/rest/v1/repositories/${APT_REPO_NAME}")
+            if [ "${response}" = "200" ]; then
+              echo "Repository ${APT_REPO_NAME} already exists. Skipping creation...."
+            elif [ "${response}" = "404" ]; then
+              echo "Repository ${APT_REPO_NAME} does not exist. Creating it..."
+              echo "${{secrets.APT_GPG_KEY_BASE64}}" > gpg_key_base64.txt
+              base64 -d gpg_key_base64.txt > gpg_key.pem
+              # To change new line into litteral '\n'  for json
+              key=$(awk '{printf "%s\\n", $0}' < gpg_key.pem)
+              rm -f gpg_key_base64.txt gpg_key.pem
+              # Create the nexus repository
+              curl --fail --header "Content-Type: application/json" \
+                -u "${{ secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM }}:${{ secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM }}"  \
+                "${NEXUS_URL}/service/rest/v1/repositories/apt/hosted/" \
+                -d "{  \"name\": \"${APT_REPO_NAME}\", \"online\": true, \"storage\": {\"blobStoreName\": \"${NEXUS_APT_REPO_BLOBSTORE}\",\"strictContentTypeValidation\": true,\"writePolicy\": \"${APT_REPO_WRITE_POLICY}\"}, \
+                \"apt\": {\"distribution\": \"${NEXUS_APT_DISTRIBUTION_NAME}\"}, \"aptSigning\": { \"keypair\": \"${key}\",\"passphrase\": \"${{ secrets.APT_GPG_PASSPHRASE }}\"}}"
+            else
+              echo "Repository ${APT_REPO_NAME} cannot be found. But error is not 404."
+              echo "Http error: ${response}"
+              echo "Response output:"
+              cat output.json
+              exit 1
+            fi
+  
+
+  # Should be done for each pair profile, collector
+  #  - profile because bianry artefact are diffrent depending on architecture
+  #  - collector : to allow adding "project" personnalization to the apt repo
+  clone-collector-workspace:
+    runs-on: ubuntu-latest
+    needs:
+      - preflight-checks
+      - extract-collectors
+      - apt-preparation
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: ${{ fromJson(needs.extract-collectors.outputs.build-profiles-list) }}
+    container:
+      image: docker-internal.it.voqa.com/${{ matrix.profile }}-compiler:main
+      credentials:
+        username: ${{ secrets.DOCKER_INTERNAL_REGISTRY_USERNAME}}
+        password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
+    env:
+      TARGET_WORKFLOW: "delivery.yml"
+      EVENT_NAME: ${{github.event_name}}
+    outputs:
+      cloning: ${{steps.finalize.outputs.cloning}}  
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set safe git path
+        run: |
+          repo=$(basename ${{ github.repository }})
+          git config --global --add safe.directory "/__w/${repo}/${repo}"
+
+      - name: Configure conan
+        uses: KUBA-EMB-CI/action-configure-conan@main
+        with:
+          json-secrets: ${{ toJson(secrets) }}
+          conan-context-path: ${CONAN_CONTEXT_PATH}
+
+      - name: Add original repository in configuration
+        run: |
+          from_repository_url=${{ needs.extract-collectors.outputs.from_repository_url }}
+          echo "Add conan authentication for FROM repository ${from_repository_url}"
+          repo_url_target=$(echo "$from_repository_url" | sed -e 's/https:\/\///' -e 's/\/.*//')
+          secret_username_to_extract=REPOSITORY_USERNAME_$(echo "$repo_url_target" | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')
+          echo "Extracting github secret ${secret_username_to_extract}"
+          all_secrets='${{ tojson(secrets) }}'
+          secret_username=$(echo $all_secrets | jq -r ".${secret_username_to_extract}")
+          if [ "null" = "${secret_username}" ] || [ -z "${secret_username}" ]; then
+            echo "Secret ${secret_username_to_extract} not found !"
+            echo "Please add secret ${secret_username_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
+            exit 1
+          fi
+          secret_token_to_extract=REPOSITORY_TOKEN_$(echo "$repo_url_target" | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')
+          echo "Extracting github secret ${secret_token_to_extract}"
+          secret_token=$(echo $all_secrets | jq -r ".${secret_token_to_extract}")
+          if [ "null" = "${secret_token}" ] || [ -z "${secret_token}" ]; then
+            echo "Secret ${secret_token_to_extract} not found !"
+            echo "Please add secret ${secret_token_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
+            exit 1
+          fi
+          all_secrets=''
+          ${{ env.CONAN }} remote add "FROM" "${from_repository_url}" --force
+          ${{ env.CONAN }} remote login -p "${secret_token}" "FROM" "${secret_username}"
+          echo "clone neeeded ${{env.CLONE_NEEDED}}"
+
+      - name: Generate dependencies for arch ${{ matrix.profile }}
+        run: |
+          requires=""
+          yq -r ".build.collectors[]" ./conan-context.yml > tmp_input
+          while read -r collector ; do 
+            collector=${collector#*/}; 
+            requires="${requires} --requires=${collector}/[*]"; 
+          done < tmp_input;
+          echo "collector requires ${requires}"
+          ${{ env.CONAN }} remote disable "${{ needs.extract-collectors.outputs.release_repo_name}}" 
+          ${{ env.CONAN }} install ${requires} -pr:h ${{ matrix.profile }} --deployer release --deployer-folder=to_conan
+          if [ ${{needs.extract-collectors.outputs.deliverable}} = 'true' ]; then
+            ${{ env.CONAN }} install ${requires} -pr:h ${{ matrix.profile }} --deployer delivery --deployer-folder=to_apt
+          fi  
+          ${{ env.CONAN }} remote enable "${{ needs.extract-collectors.outputs.release_repo_name}}" 
+
+      - name: Upload to conan
+        id: upload
+        run: |
+          DELIVERY_NAME=${{ needs.preflight-checks.outputs.delivery-name }}
+          echo "Start upload release packages"
+          echo "Generated at $(date)\n\n"> README.md
+          jq -c '.[] ' ./to_conan/packages.json | while read -r repository ; do \
+            package=$(echo "$repository" | jq -r .name)
+            version=$(echo "$repository" | jq -r .version)
+            sha=$(echo "$repository" | jq -r .sha)
+            url=$(echo "$repository" | jq -r .url) 
+            name=$(echo "$repository" | jq -r .name) 
+            bundle=$(echo "$repository" | jq -r .bundle)
+            echo "Manage package ${package} with version ${version}"
+            URL_NOPRO=${url#*//}
+            URL_REL=${URL_NOPRO#*/}
+            OWNER=$(echo "${URL_REL}" | cut -d'/' -f1)
+            echo "Extracting github token secret for org ${OWNER}"
+            OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_RELEASE_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+            echo "Looking for matching github secret ${OWNER_GIT_TOKEN_SECRET}"
+            # shellcheck disable=SC2086
+            all_secrets='${{ tojson(secrets) }}'
+            OWNER_GIT_TOKEN=$(echo "$all_secrets" | jq -r ".${OWNER_GIT_TOKEN_SECRET}")
+            all_secrets=''
+            if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
+              echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
+              echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
+              exit 1
+            else
+              echo "Found secret ${OWNER_GIT_TOKEN_SECRET}"
+            fi
+            echo "${OWNER_GIT_TOKEN}" > mytoken.txt
+            gh auth login --with-token < mytoken.txt
+            rm mytoken.txt
+
+            if [ "${{ needs.extract-collectors.outputs.from_repository_url}}" != "${{ needs.extract-collectors.outputs.release_repo_url}}" ]; then
+              : # ---------- BRANCH ---------------------------------------
+              : # Create branch systematically if not existing , update it to the sha
+              : # of the source tag used for creating the clone package if it already exist
+              if gh api "repos/${URL_REL}/branches/release/${DELIVERY_NAME}" --silent > /dev/null 2>&1; then
+                echo "Branch release/${DELIVERY_NAME} already found in ${URL_REL}"
+                curl --fail  --silent -H "Authorization: token ${OWNER_GIT_TOKEN}"  "https://api.github.com/repos/$URL_REL/git/refs/heads/release/${DELIVERY_NAME}" -o ./getref.json
+                prev_sha=$(jq -r -c ".object.sha" ./getref.json)
+                if [ "${prev_sha}" != "${sha}" ]; then 
+                  echo "Changed branch from ${prev_sha} to ${sha}"
+                  curl --fail -X PATCH -H "Authorization: token ${OWNER_GIT_TOKEN}" -d  "{\"sha\": \"$sha\"}" "https://api.github.com/repos/$URL_REL/git/refs/heads/release/${DELIVERY_NAME}"
+                fi
+              else
+                echo "Branch release/${DELIVERY_NAME} not found in ${URL_REL}, create it now"
+                curl --fail -X POST -H "Authorization: token ${OWNER_GIT_TOKEN}" -d  "{\"ref\": \"refs/heads/release/${DELIVERY_NAME}\",\"sha\": \"$sha\"}" "https://api.github.com/repos/$URL_REL/git/refs"
+              fi
+
+              : # ---------- UPLOAD ARTEFACT TO CONAN REPOSITORY -----------
+              : # Upload recipe and binary package to conan repository
+              : # conan download is needed to also get exports_sources
+              echo "Download package ${package} with version ${version}"
+              ${{ env.CONAN }} download -r FROM "$package/$version"
+              echo "Upload package ${package} with version ${version} to ${{ needs.extract-collectors.outputs.release_repo_name }}"
+              ${{ env.CONAN }} upload -r "${{ needs.extract-collectors.outputs.release_repo_name }}" "$package/$version" 
+
+            fi  
+
+
+            : # ---------- TAGGING ---------------------------------------
+            : # also tag if we have created a tag
+            if [ ${GITHUB_REF_TYPE} = 'tag' ]; then
+              if gh api "repos/${URL_REL}/git/refs/tags/${DELIVERY_NAME}" --silent > /dev/null 2>&1; then
+                echo "Tag ${DELIVERY_NAME} already found in ${URL_REL}"
+              else
+                echo "Tag ${DELIVERY_NAME} not found in ${URL_REL}, create it now"
+                tag_sha=$(gh api --method POST -H "Accept: application/vnd.github+json" \
+                                     -H "X-Github-Api-Version: 2022-11-28" \
+                                     "/repos/${URL_REL}/git/tags" \
+                                     -f "tag=${DELIVERY_NAME}" \
+                                     -f "message=Release ${DELIVERY_NAME}" \
+                                     -f "object=$sha" \
+                                     -f "type=commit" | jq -r '.sha')
+                gh api --method POST -H "Accept: application/vnd.github+json" \
+                                     -H "X-Github-Api-Version: 2022-11-28" \
+                                     "/repos/${URL_REL}/git/refs" \
+                                     -f "ref=refs/tags/${DELIVERY_NAME}" \
+                                     -f "sha=${tag_sha}"
+              fi
+            fi
+            WORKFLOW_FILE="ci.yaml"
+            is_collector=$(yq -r ".build.collectors | any_c(. == \"${URL_REL}\")" ./conan-context.yml)
+            [ "${is_collector}" = "true" ] && WORKFLOW_FILE="delivery.yml"
+            echo "[${name}](https://github.com/${URL_REL}/tree/${GITHUB_REF_NAME}) ![${name}](https://github.com/${URL_REL}/actions/workflows/${WORKFLOW_FILE}/badge.svg?branch=release/${DELIVERY_NAME})\n" >> README.md
+          done
+
+          # ---------- DASHBOARD ---------------------------------------
+          TODAY=$( date -u  )
+          MESSAGE="regenerate README.md at $TODAY"
+          CONTENT=$( base64 -i README.md )
+          DESTINATION_BRANCH="release/$DELIVERY_NAME"
+          echo "Message $MESSAGE SHA $SHA DEST $DESTINATION_BRANCH"
+          OWNER=$(echo "${GITHUB_REPOSITORY}" | cut -d'/' -f1) 
+          echo "owner ${OWNER}"
+          OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_RELEASE_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+          # shellcheck disable=SC2086
+          all_secrets='${{ tojson(secrets) }}'
+          OWNER_GIT_TOKEN=$(echo "$all_secrets" | jq -r ".${OWNER_GIT_TOKEN_SECRET}")
+          all_secrets=''          
+          echo "${OWNER_GIT_TOKEN}" > mytoken.txt
+          gh auth login --with-token < mytoken.txt
+          rm mytoken.txt
+          echo "CMD gh api -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28'  /repos/${GITHUB_REPOSITORY}/contents/README.md?ref=refs/heads/release/$DELIVERY_NAME "
+          SHA=$(gh api -H 'Accept: application/vnd.github+json' \
+                -H 'X-GitHub-Api-Version: 2022-11-28' \
+                /repos/${GITHUB_REPOSITORY}/contents/README.md?ref=refs/heads/release/$DELIVERY_NAME | jq -r '.sha')
+          gh api --method PUT /repos/${GITHUB_REPOSITORY}/contents/README.md \
+              --field message="$MESSAGE" \
+              --field content="$CONTENT" \
+              --field encoding="base64" \
+              --field branch="$DESTINATION_BRANCH" \
+              --field sha="$SHA"
+
+      - name: Upload apt delivery
+        if: needs.extract-collectors.outputs.deliverable == 'true'
+        run: |
+            for deb in ./to_apt/*.deb; do 
+              echo "uploading ${deb}"
+              curl -v -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
+                -H "Content-Type: multipart/form-data" --data-binary \
+                "@${deb}" "${NEXUS_URL}/repository/${{ needs.apt-preparation.outputs.apt-repo-name }}/" 
+            done 
+
+      - name: 'Upload bundle release packages contents'
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-release-${{ matrix.profile }}
+          path: ./to_conan/packages.json
+
+      - name: 'Upload bundle delivery packages contents'
+        if: needs.extract-collectors.outputs.deliverable == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-delivery-${{ matrix.profile }}
+          path: ./to_apt/packages.json
+  
+      - name: remove clone request if any
+        id: finalize
+        run: |
+          if [ -f clone.yml ]; then
+            echo "cloning=true" >> "${GITHUB_ENV}"   
+            echo "Clone successfully done, removing clone request"
+            DELIVERY_NAME=${{ needs.preflight-checks.outputs.delivery-name }}
+
+            : # Authenticate on current git repos
+            OWNER=$(echo "${GITHUB_REPOSITORY}" | cut -d'/' -f1) 
+            echo "owner ${OWNER}"
+            OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_RELEASE_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+            # shellcheck disable=SC2086
+            all_secrets='${{ tojson(secrets) }}'
+            OWNER_GIT_TOKEN=$(echo "$all_secrets" | jq -r ".${OWNER_GIT_TOKEN_SECRET}")
+            all_secrets=''          
+            if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
+              echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
+              echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
+              exit 1
+            else
+              echo "Found secret ${OWNER_GIT_TOKEN_SECRET}"
+            fi
+            echo "${OWNER_GIT_TOKEN}" > mytoken.txt
+            gh auth login --with-token < mytoken.txt
+            rm mytoken.txt
+
+            : # get current sha of the file
+            URL="/repos/${GITHUB_REPOSITORY}/contents/clone.yml"
+            REF="release/${DELIVERY_NAME}"
+            echo "command gh api -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' ${URL}?ref=refs/heads/${REF}"
+            sha=$(gh api -H 'Accept: application/vnd.github+json' \
+                -H 'X-GitHub-Api-Version: 2022-11-28' \
+                ${URL}?ref=refs/heads/${REF} | jq -r '.sha')            
+            echo "sha ${sha}"
+            echo "command gh api --method DELETE -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' ${URL} -f  'message=clone finished' -f \"sha=${sha}\" -f \"branch=${REF}\""
+
+            : # delete the requets
+            gh api --method DELETE -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              ${URL} \
+              -f "message=clone finished removing request ${GITHUB_RUN} : ${GITHUB_SERVER}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+              -f "sha=${sha}" \
+              -f "branch=${REF}"
+
+             : # removing clone.yml will recall this action this time without the clone (hopefully)  
+          else
+             echo "cloning=false" >> "${GITHUB_ENV}"   
+          fi
+
+  dispatch-rebuild-:
+    runs-on: ubuntu-latest
+    if: ( ${{github.event_name}} == "push" || ${{github.event_name}} == "workflow_dispatch" ) && ${{ ! needs.clone-collector-workspace.cloning }}
+    needs:
+      - extract-collectors
+      - clone-collector-workspace
+
     strategy:
       matrix:
         collector: ${{ fromJson(needs.extract-collectors.outputs.collectors-list) }}
     env:
-      TARGET_WORKFLOW: "delivery.yml"
+      TARGET_WORKFLOW: "rebuild.yml"
     steps:
       - name: Extract release name
         run: |
@@ -133,4 +558,4 @@ jobs:
         run: |
           gh workflow run "${TARGET_WORKFLOW}" \
             --repo "${{ matrix.collector }}" \
-            --ref "${{ github.ref_name }}"
+            --ref "${{ github.ref_name }}"          
