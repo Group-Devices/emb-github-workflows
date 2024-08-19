@@ -136,10 +136,6 @@ jobs:
               echo "Uploading  ${package} into ${upload}"
               conan upload -r "${upload}" "${package}" --confirm
             done
-            context=$(yq e '.bundle' "${CONAN_CONTEXT_PATH}")
-            gh workflow run "delivery.yml" \
-              --repo "${context}" \
-              --ref "${{ github.ref_name }}"    
           else
             echo "Upload only package ${repo} because build missing is false"
             conan upload -r "${upload}" "${repo}" --confirm
@@ -216,3 +212,16 @@ jobs:
             --ref "${{ github.ref_name }}" \
             --field rebuild_cause="Change in ${{ github.ref_name }} of ${{ github.repository }}" \
             --field linked_commit="https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
+
+  rebuild-context:
+    runs-on: ubuntu-latest
+    needs: 
+      - build-and-upload
+    if: ${{ inputs.build-missing }}    
+    steps:
+      - name: Call context delivery  
+        run: |  
+          context=$(yq e '.bundle' "${CONAN_CONTEXT_PATH}")
+          gh workflow run "delivery.yml" \
+            --repo "${context}" \
+            --ref "${{ github.ref_name }}"    
