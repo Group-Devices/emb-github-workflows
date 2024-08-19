@@ -129,7 +129,7 @@ jobs:
           if [ "${{ inputs.build-missing }}" = "true" ]; then
             # shall to correspond to collector package
             echo "Generate bundle packages list"
-            conan install . -pr:h ${{ matrix.profile }} --deployer release  --deployer-folder=to_upload
+            conan install --requires "${repo}/[*]" -pr:h ${{ matrix.profile }} --deployer release  --deployer-folder=to_upload
             jq -c '.[] ' ./to_upload/packages.json | while read -r repository ; do \
               package=$(echo "$repository" | jq -r .name)
               echo "Uploading  ${package} into ${upload}"
