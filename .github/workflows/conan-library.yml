@@ -126,6 +126,7 @@ jobs:
           else
             echo "Conan upload to repository ${upload}"
           fi
+          repo=$(basename ${{ github.repository }})
           if [ "${{ inputs.build-missing }}" = "true" ]; then
             # shall to correspond to collector package
             echo "Generate bundle packages list"
@@ -136,7 +137,6 @@ jobs:
               conan upload -r "${upload}" "${package}" --confirm            
             done
           else
-            repo=$(basename ${{ github.repository }})
             echo "Upload only package ${repo} because build missing is false"
             conan upload -r "${upload}" "${repo}" --confirm
           fi
