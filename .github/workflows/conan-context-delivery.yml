@@ -7,7 +7,8 @@ on:
         description: 'Ask for collectors rebuild'
         required: false
         type: boolean
-        default: true    
+        default: true
+            
 env:
   CONAN_CONTEXT_PATH: conan-context.yml
   CLONE_PATH: clone.yml

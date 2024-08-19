@@ -113,8 +113,10 @@ jobs:
           conan_options=""
           if [ "${{ inputs.build-missing }}" = "true" ]; then
             conan_options="--build=missing --build=cascade"
+            conan create . "${conan_options}" --format json -pr:h "${{ matrix.profile }}" > "create_${{ matrix.profile }}.json"
+          else  
+            conan create . --format json -pr:h "${{ matrix.profile }}" > "create_${{ matrix.profile }}.json"
           fi
-          conan create . "${conan_options}" --format json -pr:h "${{ matrix.profile }}" > "create_${{ matrix.profile }}.json"
       - name: Conan upload
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/release/')
         run: |
