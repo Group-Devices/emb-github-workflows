@@ -112,9 +112,9 @@ jobs:
         run: |
           conan_options=""
           if [ "${{ inputs.build-missing }}" = "true" ]; then
-            conan_options="--build=missing"
+            conan_options="--build=missing --build=cascade"
           fi
-          conan create . ${conan_options} --format json -pr:h ${{ matrix.profile }} > create_${{ matrix.profile }}.json
+          conan create . "${conan_options}" --format json -pr:h "${{ matrix.profile }}" > "create_${{ matrix.profile }}.json"
       - name: Conan upload
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/release/')
         run: |
@@ -134,7 +134,7 @@ jobs:
             jq -c '.[] ' ./to_upload/packages.json | while read -r repository ; do \
               package=$(echo "$repository" | jq -r .name)
               echo "Uploading  ${package} into ${upload}"
-              conan upload -r "${upload}" "${package}" --confirm            
+              conan upload -r "${upload}" "${package}" --confirm
             done
           else
             echo "Upload only package ${repo} because build missing is false"
@@ -212,3 +212,16 @@ jobs:
             --ref "${{ github.ref_name }}" \
             --field rebuild_cause="Change in ${{ github.ref_name }} of ${{ github.repository }}" \
             --field linked_commit="https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
+
+  rebuild-context:
+    runs-on: ubuntu-latest
+    needs: 
+      - build-and-upload
+    if: ${{ inputs.build-missing }}    
+    steps:
+      - name: Call context delivery  
+        run: |  
+          context=$(yq e '.bundle' "${CONAN_CONTEXT_PATH}")
+          gh workflow run "delivery.yml" \
+            --repo "${context}" \
+            --ref "${{ github.ref_name }}"    
