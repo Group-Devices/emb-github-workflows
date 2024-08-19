@@ -1,8 +1,13 @@
-name: "Clone workspace"
+name: "Delivery"
 
 on:
   workflow_call:
-
+    inputs:
+      dispath-to-collectors:
+        description: 'Ask for collectors rebuild'
+        required: false
+        type: boolean
+        default: true    
 env:
   CONAN_CONTEXT_PATH: conan-context.yml
   CLONE_PATH: clone.yml
@@ -287,11 +292,11 @@ jobs:
             requires="${requires}${sep}--requires=${collector}/[*]"; 
             sep=" "
           done < tmp_input;
-          echo "collector requires ${requires:1}"
+          echo "collector requires ${requires}"
           ${{ env.CONAN }} remote disable "${{ needs.extract-collectors.outputs.release_repo_name}}" 
-          ${{ env.CONAN }} install "${requires:1}" -pr:h "${{ matrix.profile }}" --deployer release --deployer-folder=to_conan
+          ${{ env.CONAN }} install "${requires}" -pr:h "${{ matrix.profile }}" --deployer release --deployer-folder=to_conan
           if [ "${{needs.extract-collectors.outputs.deliverable}}" = 'true' ]; then
-            ${{ env.CONAN }} install "${requires:1}" -pr:h "${{ matrix.profile }}" --deployer delivery --deployer-folder=to_apt
+            ${{ env.CONAN }} install "${requires}" -pr:h "${{ matrix.profile }}" --deployer delivery --deployer-folder=to_apt
           fi  
           ${{ env.CONAN }} remote enable "${{ needs.extract-collectors.outputs.release_repo_name}}" 
 
@@ -486,9 +491,9 @@ jobs:
              echo "cloning=false" >> "${GITHUB_ENV}"   
           fi
 
-  dispatch-rebuild-:
+  dispatch-rebuild:
     runs-on: ubuntu-latest
-    if:  ( github.event_name == 'push' || github.event_name == 'workflow_dispatch' ) && !needs.clone-collector-workspace.outputs.cloning 
+    if:  inputs.dispath-to-collectors && !needs.clone-collector-workspace.outputs.cloning 
     needs:
       - extract-collectors
       - clone-collector-workspace
