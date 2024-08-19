@@ -110,10 +110,8 @@ jobs:
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
       - name: Conan create
         run: |
-          conan_options=""
           if [ "${{ inputs.build-missing }}" = "true" ]; then
-            conan_options="--build=missing --build=cascade"
-            conan create . "${conan_options}" -pr:h "${{ matrix.profile }}" 
+            conan create . --build=missing --build=cascade -pr:h "${{ matrix.profile }}" 
           else  
             conan create . -pr:h "${{ matrix.profile }}" 
           fi
