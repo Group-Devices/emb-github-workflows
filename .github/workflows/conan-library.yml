@@ -116,7 +116,7 @@ jobs:
             conan create . -pr:h "${{ matrix.profile }}" 
           fi
       - name: Conan upload
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/release/')
+        if: inputs.enable-rebuild-collectors
         run: |
           upload=$(yq e '.upload' "${CONAN_CONTEXT_PATH}")
           if [ -z "${upload}" ] || [ "null" = "${upload}" ]; then
