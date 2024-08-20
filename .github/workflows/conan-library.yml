@@ -142,7 +142,7 @@ jobs:
           fi
   rebuild-collectors:
     runs-on: ubuntu-latest
-    if: inputs.enable-rebuild-collectors && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/' || startsWith(github.ref, 'refs/heads/release/')))
+    if: inputs.enable-rebuild-collectors
     needs:
       - generate-conan-context
       - build-and-upload
