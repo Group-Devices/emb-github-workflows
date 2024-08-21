@@ -1,0 +1,119 @@
+#
+# This workflows is expected to run on tags and:
+#   - generate automatic changelog with PR history
+#   - commit the changelog and open pr for code owners
+#   - create a github release
+
+name: 'Github release'
+
+on:
+  workflow_call:
+
+jobs:
+  generate-changelog:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    container: githubchangeloggenerator/github-changelog-generator
+    steps:
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate full changelog
+        run: |
+          github_changelog_generator -u "${GITHUB_REPOSITORY_OWNER}" -p "${GITHUB_REPOSITORY#"$GITHUB_REPOSITORY_OWNER"/}" -t ${{ github.token }} --output CHANGELOG.md --no-unreleased --pr-label="" --no-issues
+
+      - name: Add CHANGELOG.md to artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: changelog-full
+          path: CHANGELOG*.md
+
+  create-github-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      FILE_TO_COMMIT: CHANGELOG.md
+      DESTINATION_BRANCH: update-changelog-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+    needs:
+      - generate-changelog
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: '0'
+
+      - name: Get CHANGELOG.md from artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: changelog-full
+
+      - name: Generate changelog for tag ${{ github.ref_name }}
+        run: |
+          sudo apt install mawk -y
+          
+          semver="${{ github.ref_name }}"
+          start_pattern="## \[$semver\]"
+          end_pattern='## \[.*\].*'
+
+          # Use awk to extract the required part and write to output file
+          /usr/bin/mawk -v start="$start_pattern" -v end="$end_pattern" '
+            BEGIN { found=0 }
+            $0 ~ start { found=1; print; next }
+            found && $0 !~ end { print }
+            $0 ~ end { found=0 }
+          ' CHANGELOG.md > CHANGELOG_TAG.md
+
+      - name: Commit changelog
+        run: |
+          # this gives us the way to have commit signin
+          # if branch does not exist
+          if ! git show-ref --verify --quiet "refs/heads/${DESTINATION_BRANCH}"; then
+            git branch "${DESTINATION_BRANCH}" origin/main
+            git push -u origin "${DESTINATION_BRANCH}"
+          fi
+          git checkout "${DESTINATION_BRANCH}"
+          git add "${FILE_TO_COMMIT}"
+          export MESSAGE="docs: update ${FILE_TO_COMMIT} with release ${{ github.ref_name }} [skip ci]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          git commit -m "${MESSAGE}" "${FILE_TO_COMMIT}"
+          TODAY=$( date -u '+%Y-%m-%d' )
+          export TODAY
+          SHA=$( git rev-parse "${DESTINATION_BRANCH}:${FILE_TO_COMMIT}" )
+          export SHA
+          CONTENT=$( base64 -i "${FILE_TO_COMMIT}" )
+          export CONTENT
+          gh api --method PUT "/repos/:owner/:repo/contents/${FILE_TO_COMMIT}" \
+            --field message="${MESSAGE}" \
+            --field content="${CONTENT}" \
+            --field encoding="base64" \
+            --field branch="${DESTINATION_BRANCH}" \
+            --field sha="${SHA}"
+          gh pr create --title "docs: update ${FILE_TO_COMMIT} with release ${{ github.ref_name }} [skip ci]" --body "Release ${{ github.ref_name }}" --base main --head "${DESTINATION_BRANCH}"
+
+      - name: Remove leading branch from origin in case of failure
+        if: failure()
+        run: |
+          git push origin --delete "${DESTINATION_BRANCH}" || true
+
+      - name: Create Release
+        uses: ncipollo/release-action@v1
+        with:
+          allowUpdates: true
+          draft: false
+          name: ${{ github.ref_name }}
+          bodyFile: CHANGELOG_TAG.md
+          token: ${{ github.token }}
+
+
+
