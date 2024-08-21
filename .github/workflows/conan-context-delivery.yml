@@ -343,11 +343,30 @@ jobs:
                 prev_sha=$(jq -r -c ".object.sha" ./getref.json)
                 if [ "${prev_sha}" != "${sha}" ]; then 
                   echo "Changed branch from ${prev_sha} to ${sha}"
-                  curl --fail -X PATCH -H "Authorization: token ${OWNER_GIT_TOKEN}" -d  "{\"sha\": \"$sha\"}" "https://api.github.com/repos/$URL_REL/git/refs/heads/release/${DELIVERY_NAME}"
+                  gh api --method POST \
+                    -H 'Accept: application/vnd.github+json' \
+                    -H 'X-GitHub-Api-Version: 2022-11-28' \
+                    "/repos/${URL_REL}/git/refs" \
+                    -f "ref=refs/heads/release/${DELIVERY_NAME}" \
+                    -f "sha=${sha}" 
+                  : # curl --fail -X PATCH -H "Authorization: token ${OWNER_GIT_TOKEN}" -d  "{\"sha\": \"$sha\"}" "https://api.github.com/repos/$URL_REL/git/refs/heads/release/${DELIVERY_NAME}"
                 fi
               else
-                echo "Branch release/${DELIVERY_NAME} not found in ${URL_REL}, create it now"
-                curl --fail -X POST -H "Authorization: token ${OWNER_GIT_TOKEN}" -d  "{\"ref\": \"refs/heads/release/${DELIVERY_NAME}\",\"sha\": \"$sha\"}" "https://api.github.com/repos/$URL_REL/git/refs"
+                echo "Branch release/${DELIVERY_NAME} not found in ${URL_REL}, create it now with sha=${sha}"
+                echo gh api --method POST \
+                  -H 'Accept: application/vnd.github+json' \
+                  -H 'X-GitHub-Api-Version: 2022-11-28' \
+                  "/repos/${URL_REL}/git/refs" \
+                  -f "ref=refs/heads/release/${DELIVERY_NAME}" \
+                  -f "sha=${sha}"
+                gh api --method POST \
+                  -H 'Accept: application/vnd.github+json' \
+                  -H 'X-GitHub-Api-Version: 2022-11-28' \
+                  "/repos/${URL_REL}/git/refs" \
+                  -f "ref=refs/heads/release/${DELIVERY_NAME}" \
+                  -f "sha=${sha}"
+
+                : # curl --fail -X POST -H "Authorization: token ${OWNER_GIT_TOKEN}" -d  "{\"ref\": \"refs/heads/release/${DELIVERY_NAME}\",\"sha\": \"$sha\"}" "https://api.github.com/repos/$URL_REL/git/refs"
               fi
 
               : # ---------- UPLOAD ARTEFACT TO CONAN REPOSITORY -----------
