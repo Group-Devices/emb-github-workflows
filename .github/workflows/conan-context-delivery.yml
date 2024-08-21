@@ -13,6 +13,7 @@ env:
   CONAN_CONTEXT_PATH: conan-context.yml
   CLONE_PATH: clone.yml
   CONAN: "conan"   # echo conan for a dry run
+  NEXUS_URL: "https://repository.it.voqa.com/"
 
 jobs:
   preflight-checks:
