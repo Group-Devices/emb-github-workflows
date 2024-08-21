@@ -3,7 +3,7 @@ name: "Delivery"
 on:
   workflow_call:
     inputs:
-      wip-build: 
+      real-build: 
         description: 'wip build'
         required: false
         type: boolean
@@ -172,7 +172,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - extract-collectors
-    if: !inputs.wip-build
+    if: ${{ inputs.real-build}}
     outputs:
       apt-repo-name: ${{ steps.set-apt-repo-name.outputs.apt-repo-name }}  
     steps:       
@@ -240,7 +240,7 @@ jobs:
       - preflight-checks
       - extract-collectors
       - apt-preparation
-    if: !inputs.wip-build
+    if: ${{ inputs.real-build}}
     strategy:
       fail-fast: false
       matrix:
