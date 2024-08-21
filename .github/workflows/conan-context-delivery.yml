@@ -192,6 +192,9 @@ jobs:
       - name: Ensure apt repository exists
         if: needs.extract-collectors.outputs.deliverable == 'true'
         run: |
+            echo curl -s -o output.json -w "%{http_code}" --header 'Content-Type: application/json' \
+                        -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
+                        "${NEXUS_URL}/service/rest/v1/repositories/${APT_REPO_NAME}"
             response=$(curl -s -o output.json -w "%{http_code}\n" --header 'Content-Type: application/json' \
                         -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
                         "${NEXUS_URL}/service/rest/v1/repositories/${APT_REPO_NAME}")
