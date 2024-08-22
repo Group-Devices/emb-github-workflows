@@ -18,6 +18,11 @@ on:
         required: false
         type: boolean
         default: false
+      force-build:  
+        description: 'forced build package'
+        required: false
+        type: string
+        default: ''
 
 env:
   SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
@@ -110,8 +115,9 @@ jobs:
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
       - name: Conan create
         run: |
-          if [ "${{ inputs.build-missing }}" = "true" ]; then
-            conan create . --build=missing --build=cascade -pr:h "${{ matrix.profile }}" 
+          if [ "${{ inputs.force-build }}" != "" ]; then
+            force=$(basename ${{inputs.force-build}})
+            conan create . "--build=$force"  --build=cascade -pr:h "${{ matrix.profile }}" 
           else  
             conan create . -pr:h "${{ matrix.profile }}" 
           fi
@@ -211,7 +217,8 @@ jobs:
             --repo "${{ matrix.collector }}" \
             --ref "${{ github.ref_name }}" \
             --field rebuild_cause="Change in ${{ github.ref_name }} of ${{ github.repository }}" \
-            --field linked_commit="https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
+            --field linked_commit="https://github.com/${{ github.repository }}/commit/${{ github.sha }}" \
+            --field built_package="${{ github.repository }}"
 
   rebuild-context:
     runs-on: ubuntu-latest
