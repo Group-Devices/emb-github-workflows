@@ -3,12 +3,6 @@ name: "Delivery"
 on:
   workflow_call:
     inputs:
-      real-build: 
-        description: 'wip build'
-        required: false
-        type: boolean
-        default: true
-
       dispath-to-collectors:
         description: 'Ask for collectors rebuild'
         required: false
@@ -174,7 +168,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - extract-collectors
-    if: inputs.real-build && needs.extract-collectors.outputs.deliverable == 'true'
+    if: needs.extract-collectors.outputs.deliverable == 'true'
     outputs:
       apt-repo-name: ${{ steps.set-apt-repo-name.outputs.apt-repo-name }}  
     steps:       
@@ -242,7 +236,6 @@ jobs:
       - preflight-checks
       - extract-collectors
       - apt-preparation
-    if: ${{ inputs.real-build}}
     strategy:
       fail-fast: false
       matrix:
