@@ -46,6 +46,8 @@ jobs:
               export DELIVERY_NAME="${GITHUB_REF_NAME}"
           elif [ "${GITHUB_REF_TYPE}" = "branch" ] && [[ "${GITHUB_REF_NAME}" == "release/"* ]]; then
               export DELIVERY_NAME="${GITHUB_REF_NAME#release/}"
+          elif [ "${GITHUB_REF_TYPE}" = "branch" ] && [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+              export DELIVERY_NAME="${GITHUB_REF_NAME}"
           else
               echo "Not able to determine which delivery name to use for github ref type ${GITHUB_REF_TYPE} and github ref name ${GITHUB_REF_NAME}"
               exit 1
