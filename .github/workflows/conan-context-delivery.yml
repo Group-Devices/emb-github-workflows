@@ -194,6 +194,7 @@ jobs:
             echo "Repository \"${APT_REPO_NAME}\" will be created with write policy \"${APT_REPO_WRITE_POLICY}\"" 
             echo "APT_REPO_NAME=${APT_REPO_NAME}" >> "$GITHUB_ENV"
             echo "APT_REPO_WRITE_POLICY=${APT_REPO_WRITE_POLICY}" >> "$GITHUB_ENV"
+            echo "apt-repo-name=${APT_REPO_NAME}" >> "$GITHUB_OUTPUT"
   
       - name: Ensure apt repository exists
         if: needs.extract-collectors.outputs.deliverable == 'true'
