@@ -170,11 +170,11 @@ jobs:
       - extract-collectors
     outputs:
       apt-repo-name: ${{ steps.set-apt-repo-name.outputs.apt-repo-name }}  
-    if: needs.extract-collectors.outputs.deliverable == 'true'
     steps:       
       - name: Set apt repository name
         id: set-apt-repo-name
         shell: bash
+        if: needs.extract-collectors.outputs.deliverable == 'true'
         run: |
             : # TODO should come from context 
             APT_PREFIX_NAME=voqa
