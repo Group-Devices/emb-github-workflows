@@ -451,6 +451,7 @@ jobs:
         if: needs.extract-collectors.outputs.deliverable == 'true'
         run: |
             for deb in ./to_apt/*.deb; do 
+              [ -f "$deb" ] || continue
               echo "uploading ${deb}"
               curl --fail -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
                 -H "Content-Type: multipart/form-data" --data-binary \
