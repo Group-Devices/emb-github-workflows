@@ -28,6 +28,7 @@ env:
   SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
   SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
   CONAN_CONTEXT_PATH: ".conan-context/conan-context.yml"
+  BUILD_ID: "${{github.run_number}}"
 
 jobs:
   generate-conan-context:
