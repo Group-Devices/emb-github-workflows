@@ -236,7 +236,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: 
       - build-and-upload
-    if: ${{inputs.enable-rebuild-context}} && ${{inputs.build-missing}}    
+    if: ${{inputs.enable-rebuild-context}}   
     steps:
       - uses: actions/download-artifact@v4
         with:
