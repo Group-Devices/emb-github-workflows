@@ -3,6 +3,11 @@ name: 'Conan library test, build, publish'
 on:
   workflow_call:
     inputs:
+      run-as-fast-build:
+        description: 'Run as fast build, need conan context and profile as parameter'
+        required: false
+        type: boolean
+        default: false
       enable-quality-analysis:
         description: 'Enable or not the SonarQube analysis'
         required: false
@@ -28,6 +33,16 @@ on:
         required: false
         type: string
         default: ''
+      conan-context:
+        description: 'Conan context plain text when run-as-fast-build is true'
+        required: false
+        type: string
+        default: ''
+      conan-profiles:
+        description: 'Conan profile as json string'
+        required: false
+        type: string
+        default: ''
 
 env:
   SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
@@ -38,6 +53,7 @@ env:
 jobs:
   generate-conan-context:
     runs-on: voqa-ubuntu-22-04
+    if: inputs.run-as-fast-build == false
     container:
       image: docker-internal.it.voqa.com/aurora-compiler:main
       credentials:
@@ -54,6 +70,9 @@ jobs:
           json-secrets: ${{ toJson(secrets) }}
   unit-tests:
     runs-on: voqa-ubuntu-22-04
+    if: inputs.run-as-fast-build == false
+    outputs:
+      status: ${{ job.status }}
     container:
       image: docker-internal.it.voqa.com/aurora-compiler:main
       credentials:
@@ -87,18 +106,19 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - generate-conan-context
-    if: inputs.enable-quality-analysis
+    if: inputs.run-as-fast-build == false && inputs.enable-quality-analysis
     steps:
       - run: echo "Will run a SonarQube analysis"
   build-and-upload:
     runs-on: voqa-ubuntu-22-04
+    if: always() && (inputs.conan-profiles != '' || needs.unit-tests.result == 'success')
     needs:
       - generate-conan-context
       - unit-tests
     strategy:
       fail-fast: false
       matrix:
-        profile: ${{ fromJson(needs.generate-conan-context.outputs.build-profile-list) }}
+        profile: ${{ inputs.conan-profiles != '' && fromJson(inputs.conan-profiles) || fromJson(needs.generate-conan-context.outputs.build-profile-list) }}
     container:
       image: docker-internal.it.voqa.com/${{ matrix.profile }}-compiler:main
       credentials:
@@ -110,10 +130,18 @@ jobs:
         run: |
           repo=$(basename ${{ github.repository }})
           git config --global --add safe.directory "/__w/${repo}/${repo}"
-      - uses: actions/download-artifact@v4
+      - name: Get conan context from previous step
+        uses: actions/download-artifact@v4
+        if: inputs.conan-context == ''
         with:
           name: conan-context
           path: .conan-context
+      - name: Get conan context from input
+        if: inputs.conan-context != ''
+        run: |
+          mkdir -p .conan-context
+          touch .conan-context/conan-context.yml
+          echo "${{ inputs.conan-context }}" > .conan-context/conan-context.yml
       - name: Configure Conan
         uses: KUBA-EMB-CI/action-configure-conan@main
         with:
@@ -160,7 +188,7 @@ jobs:
           path: conan_create.log
   rebuild-collectors:
     runs-on: ubuntu-latest
-    if: inputs.enable-rebuild-collectors
+    if: inputs.run-as-fast-build == false && inputs.enable-rebuild-collectors
     needs:
       - generate-conan-context
       - build-and-upload
@@ -236,7 +264,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: 
       - build-and-upload
-    if: ${{inputs.enable-rebuild-context}}   
+    if: inputs.run-as-fast-build == false && inputs.enable-rebuild-context
     steps:
       - uses: actions/download-artifact@v4
         with:
