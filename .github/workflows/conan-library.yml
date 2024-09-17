@@ -188,7 +188,7 @@ jobs:
           path: conan_create.log
   rebuild-collectors:
     runs-on: ubuntu-latest
-    if: inputs.run-as-fast-build == false && inputs.enable-rebuild-collectors
+    if: inputs.run-as-fast-build == false && inputs.enable-rebuild-collectors && github.event_name != 'pull_request'
     needs:
       - generate-conan-context
       - build-and-upload
@@ -264,7 +264,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: 
       - build-and-upload
-    if: inputs.run-as-fast-build == false && inputs.enable-rebuild-context
+    if: inputs.run-as-fast-build == false && inputs.enable-rebuild-context && github.event_name != 'pull_request'
     steps:
       - uses: actions/download-artifact@v4
         with:
