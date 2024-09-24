@@ -159,7 +159,26 @@ jobs:
             conan graph build-order . -pr:h "${{ matrix.profile }}" --build=missing --format=json --reduce --order-by recipe > build.json
             jq -r '.order[][].ref' < build.json | while read -r ref; do
               package_path="$(conan cache path "${ref}")"
-              git clone "$(yq -r '.url'  < "${package_path}/conandata.yml" )"
+              url="$(yq -r '.url'  < "${package_path}/conandata.yml" )"
+              sha="$(yq -r '.sha'  < "${package_path}/conandata.yml" )"
+              OWNER="$(yq -r '.bundle'  < "${package_path}/conandata.yml" )"
+              OWNER=${OWNER%/*}
+              OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+              # shellcheck disable=SC2086
+              all_secrets='${{ tojson(secrets) }}'
+              OWNER_GIT_TOKEN=$(echo "$all_secrets" | jq -r ".${OWNER_GIT_TOKEN_SECRET}")
+              all_secrets=''
+              if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
+                 echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
+                 echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
+                 exit 1
+              else
+                 echo "Found secret ${OWNER_GIT_TOKEN_SECRET} that will be use to trigger rebuild of ${{ matrix.collector }}"
+              fi
+              echo "${OWNER_GIT_TOKEN}" > mytoken.txt
+              gh auth login --with-token < mytoken.txt
+              rm mytoken.txt              
+              git clone "$url"
               echo "extracting package name and version from $ref"
               name="${ref%/*}"
               prev="${ref#*/}"
@@ -169,7 +188,7 @@ jobs:
               build="${prev#*+}"
               build="${build%.*}"
               echo "Ripple building ${name} from version ${version} build ${build} ...."
-              cd "${name}" && PREVIOUS_VERSION="${version}+${build}" conan create . -pr:h "${{ matrix.profile }}" 2>&1 | tee conan_create.log && cd ..
+              cd "${name}" && git reset --hard $sha && PREVIOUS_VERSION="${version}+${build}" conan create . -pr:h "${{ matrix.profile }}" 2>&1 | tee conan_create.log && cd ..
             done
           else  
             conan create . -pr:h "${{ matrix.profile }}" 2>&1 | tee conan_create.log
