@@ -188,7 +188,7 @@ jobs:
               build="${prev#*+}"
               build="${build%.*}"
               echo "Ripple building ${name} from version ${version} build ${build} ...."
-              cd "${name}" && git reset --hard $sha && PREVIOUS_VERSION="${version}+${build}" conan create . -pr:h "${{ matrix.profile }}" 2>&1 | tee conan_create.log && cd ..
+              cd "${name}" && git reset --hard "$sha" && PREVIOUS_VERSION="${version}+${build}" conan create . -pr:h "${{ matrix.profile }}" 2>&1 | tee conan_create.log && cd ..
             done
           else  
             conan create . -pr:h "${{ matrix.profile }}" 2>&1 | tee conan_create.log
