@@ -154,6 +154,15 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
+          upload=$(yq e '.upload' "${CONAN_CONTEXT_PATH}")
+          if [ -z "${upload}" ] || [ "null" = "${upload}" ]; then
+            echo "Field upload is missing in ${CONAN_CONTEXT_PATH}"
+            echo "Please add it"
+            exit 1
+          else
+            echo "Conan upload to repository ${upload}"
+          fi
+          repo=$(basename ${{ github.repository }})
           use_ripple_id=$(yq e '.use_ripple_id' "${CONAN_CONTEXT_PATH}")
           if [ "${use_ripple_id}" = "true" ]; then
                echo "USE_RIPPLE_ID=true" >> "$GITHUB_ENV"
@@ -164,8 +173,10 @@ jobs:
               package_path="$(conan cache path "${ref}")"
               url="$(yq -r '.url'  < "${package_path}/conandata.yml" )"
               sha="$(yq -r '.sha'  < "${package_path}/conandata.yml" )"
-              OWNER="$(yq -r '.bundle'  < "${package_path}/conandata.yml" )"
-              OWNER=${OWNER%/*}
+              OWNER="${url#*//}"
+              OWNER="${OWNER#*/}"
+              OWNER="${OWNER%/*}"
+              echo "url $url sha $sha OWNER $OWNER"
               OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
               # shellcheck disable=SC2086
               all_secrets='${{ tojson(secrets) }}'
@@ -181,7 +192,7 @@ jobs:
               echo "${OWNER_GIT_TOKEN}" > mytoken.txt
               gh auth login --with-token < mytoken.txt
               rm mytoken.txt              
-              git clone "$url"
+              gh repo clone "$url"
               echo "extracting package name and version from $ref"
               name="${ref%/*}"
               prev="${ref#*/}"
@@ -192,35 +203,11 @@ jobs:
               build="${build%.*}"
               echo "Ripple building ${name} from version ${version} build ${build} ...."
               cd "${name}" && git reset --hard "$sha" && PREVIOUS_VERSION="${version}+${build}" conan create . -pr:h "${{ matrix.profile }}" 2>&1 | tee conan_create.log && cd ..
+              conan upload -r "${upload}" "${name}" --confirm
             done
-          else  
-            conan create . -pr:h "${{ matrix.profile }}" 2>&1 | tee conan_create.log
-          fi
-      - name: Conan upload
-        if: inputs.enable-rebuild-collectors || inputs.build-missing
-        run: |
-          upload=$(yq e '.upload' "${CONAN_CONTEXT_PATH}")
-          if [ -z "${upload}" ] || [ "null" = "${upload}" ]; then
-            echo "Field upload is missing in ${CONAN_CONTEXT_PATH}"
-            echo "Please add it"
-            exit 1
-          else
-            echo "Conan upload to repository ${upload}"
-          fi
-          repo=$(basename ${{ github.repository }})
-          if [ "${{ inputs.build-missing }}" = "true" ]; then
-            # shall to correspond to collector package
-            echo "Generate bundle packages list"
-            conan install --requires "${repo}/[*]" -pr:h ${{ matrix.profile }} --deployer release  --deployer-folder=to_upload
-            jq -c '.[] ' ./to_upload/packages.json | while read -r repository ; do \
-              package=$(echo "$repository" | jq -r .name)
-              echo "Uploading  ${package} into ${upload}"
-              conan upload -r "${upload}" "${package}" --confirm
-            done
-          else
-            echo "Upload only package ${repo} because build missing is false"
-            conan upload -r "${upload}" "${repo}" --confirm
-          fi
+          fi  
+          conan create . -pr:h "${{ matrix.profile }}" 2>&1 | tee conan_create.log
+          conan upload -r "${upload}" "${repo}" --confirm
       - name: Archive conan create log
         uses: actions/upload-artifact@v4
         with:
