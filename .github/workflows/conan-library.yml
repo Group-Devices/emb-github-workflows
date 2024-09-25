@@ -173,6 +173,13 @@ jobs:
               package_path="$(conan cache path "${ref}")"
               url="$(yq -r '.url'  < "${package_path}/conandata.yml" )"
               sha="$(yq -r '.sha'  < "${package_path}/conandata.yml" )"
+              bundle="$(yq -r '.bundle'  < "${package_path}/conandata.yml" )"
+              context=$(yq e '.bundle' "${CONAN_CONTEXT_PATH}")
+              if [ "${bundle}" !=  "${context}" ]; then
+                echo "need to rebuild a package ${ref} from another context ${bundle}"  
+                echo "Looks like ${bundle is broken}"
+                exit 1
+              fi
               OWNER="${url#*//}"
               OWNER="${OWNER#*/}"
               OWNER="${OWNER%/*}"
