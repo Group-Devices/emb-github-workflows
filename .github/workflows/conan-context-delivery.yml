@@ -328,8 +328,12 @@ jobs:
             url=$(echo "$repository" | jq -r .url) 
             name=$(echo "$repository" | jq -r .name) 
             echo "Manage package ${package} with version ${version}"
+            # suppress https://
             URL_NOPRO=${url#*//}
+            # supreess github.com
             URL_REL=${URL_NOPRO#*/}
+            # suppress .git if any
+            URL_REL=${URL_NOPRO%.*}
             OWNER=$(echo "${URL_REL}" | cut -d'/' -f1)
             echo "Extracting github token secret for org ${OWNER}"
             OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_RELEASE_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
