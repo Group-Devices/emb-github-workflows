@@ -421,39 +421,7 @@ jobs:
                                      -f "sha=${tag_sha}"
               fi
             fi
-            WORKFLOW_FILE="ci.yaml"
-            is_collector=$(yq -r ".build.collectors | any_c(. == \"${URL_REL}\")" ./conan-context.yml)
-            [ "${is_collector}" = "true" ] && WORKFLOW_FILE="rebuild.yml"
-            link="[${name}](https://github.com/${URL_REL}/tree/${GITHUB_REF_NAME})"
-            badge="![${name}](https://github.com/${URL_REL}/actions/workflows/${WORKFLOW_FILE}/badge.svg?branch=${DESTINATION_BRANCH})" 
-            printf "%s %s\n" "$link" "$badge">> README.md
           done
-
-          # ---------- DASHBOARD ---------------------------------------
-          TODAY=$( date -u  )
-          MESSAGE="regenerate README.md at $TODAY"
-          CONTENT=$( base64 -i README.md )
-          echo "Message $MESSAGE SHA $SHA DEST $DESTINATION_BRANCH"
-          OWNER=$(echo "${GITHUB_REPOSITORY}" | cut -d'/' -f1) 
-          echo "owner ${OWNER}"
-          OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_RELEASE_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
-          # shellcheck disable=SC2086
-          all_secrets='${{ tojson(secrets) }}'
-          OWNER_GIT_TOKEN=$(echo "$all_secrets" | jq -r ".${OWNER_GIT_TOKEN_SECRET}")
-          all_secrets=''          
-          echo "${OWNER_GIT_TOKEN}" > mytoken.txt
-          gh auth login --with-token < mytoken.txt
-          rm mytoken.txt
-          echo "CMD gh api -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28'  /repos/${GITHUB_REPOSITORY}/contents/README.md?ref=refs/heads/$DESTINATION_BRANCH"
-          SHA=$(gh api -H 'Accept: application/vnd.github+json' \
-                -H 'X-GitHub-Api-Version: 2022-11-28' \
-                "/repos/${GITHUB_REPOSITORY}/contents/README.md?ref=refs/heads/$DESTINATION_BRANCH" | jq -r '.sha')
-          gh api --method PUT "/repos/${GITHUB_REPOSITORY}/contents/README.md" \
-              --field message="$MESSAGE" \
-              --field content="$CONTENT" \
-              --field encoding="base64" \
-              --field branch="$DESTINATION_BRANCH" \
-              --field sha="$SHA"
 
       - name: Upload apt delivery
         if: needs.extract-collectors.outputs.deliverable == 'true'
