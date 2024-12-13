@@ -350,5 +350,5 @@ jobs:
           gh workflow run "delivery.yml" \
             --repo "${context}" \
             --ref "${{ github.ref_name }}" \
-            --feild rebuild_cause="${{inputs.rebuild_cause}}" \
-            --feild linked_commit="${{inputs.linked_commit}}"
+            --field rebuild_cause="${{inputs.rebuild_cause}}" \
+            --field linked_commit="${{inputs.linked_commit}}"
