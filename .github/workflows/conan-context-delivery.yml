@@ -15,7 +15,8 @@ env:
   CONAN: "conan"   # echo conan for a dry run
   NEXUS_URL: "https://repository.it.voqa.com"
   NEXUS_APT_REPO_BLOBSTORE: "nexus-bs-voqa-prd-apt"
-  NEXUS_APT_DISTRIBUTION_NAME: "voqa"  
+  NEXUS_APT_DISTRIBUTION_NAME: "voqa"
+  NEXUS_CONAN_REPO_BLOBSTORE: "nexus-bs-voqa-prd-conan"
 
 jobs:
   preflight-checks:
@@ -31,8 +32,6 @@ jobs:
             exit 1
           fi
 
-      # TODO to be improved when we have conan repositories creation
-      #       to get delivery name  more dynamically
       - name: Determine delivery name
         id: determine-delivery-name
         run: |
@@ -89,8 +88,9 @@ jobs:
       deliverable: ${{ steps.generate-delivery.outputs.deliverable }}
       from_repository_url: ${{ steps.generate-release-info.outputs.from_repository_url }}
       release_name: ${{ steps.generate-release-info.outputs.release_name }}
-      release_repo_name: ${{ steps.generate-release-info.outputs.release_repo_name }}
-      release_repo_url: ${{ steps.generate-release-info.outputs.release_repo_url }}
+      conan_release_remote_name: ${{ steps.generate-release-info.outputs.conan_release_remote_name }}
+      conan_release_remote_url: ${{ steps.generate-release-info.outputs.conan_release_remote_url }}
+      conan_release_repository_name: ${{ steps.generate-release-info.outputs.conan_release_repository_name }}
     needs:
       - check-conan-context
     steps:
@@ -145,10 +145,11 @@ jobs:
           echo "Release name: ${release_name}"
           echo "release_name=${release_name}" >> "$GITHUB_OUTPUT"
           upload_repository=$(yq -r ".upload" "${CONAN_CONTEXT_PATH}")
-          echo "release_repo_name=${upload_repository}"
-          echo "release_repo_name=${upload_repository}" >> "$GITHUB_OUTPUT"
+          echo "conan_release_remote_name=${upload_repository}"
+          echo "conan_release_remote_name=${upload_repository}" >> "$GITHUB_OUTPUT"
           upload_repository_url=$(yq -r ".repositories.${upload_repository}" "${CONAN_CONTEXT_PATH}")
-          echo "release_repo_url=${upload_repository_url}"  >> "$GITHUB_OUTPUT"
+          echo "conan_release_remote_url=${upload_repository_url}"  >> "$GITHUB_OUTPUT"
+          echo "conan_release_repository_name=$(basename "${upload_repository_url}")" >> "$GITHUB_OUTPUT"
 
           : # By default use upload url
           from_repository_url=${upload_repository_url}
@@ -164,13 +165,50 @@ jobs:
           fi     
           echo "from_repository_url=$from_repository_url" >> "$GITHUB_OUTPUT"
 
-  apt-preparation:
+  repositories-preparation:
     runs-on: voqa-ubuntu-22-04
     needs:
       - extract-collectors
     outputs:
-      apt-repo-name: ${{ steps.set-apt-repo-name.outputs.apt-repo-name }}  
-    steps:       
+      apt-repo-name: ${{ steps.set-apt-repo-name.outputs.apt-repo-name }}
+    steps:
+      - name: Set repository authentication
+        id: set-repository-authentication
+        if: needs.extract-collectors.outputs.deliverable == 'true'
+        run: |
+          conan_release_remote_url="${{ needs.extract-collectors.outputs.conan_release_remote_url }}"
+          repository_hostname=$(echo "${conan_release_remote_url}" | cut -d'/' -f3 | cut -d':' -f1)
+          echo "Extracting github token secret for repository ${repository_hostname}"
+          
+          # shellcheck disable=SC2086
+          all_secrets='${{ tojson(secrets) }}'
+          
+          RELEASE_REGISTRY_USERNAME_SECRET=REPOSITORY_USERNAME_$(echo "${repository_hostname}" | tr '[:lower:]' '[:upper:]' | tr '-' '_' | tr '.' '_')
+          echo "Looking for matching github secret ${RELEASE_REGISTRY_USERNAME_SECRET}"
+          RELEASE_REGISTRY_USERNAME=$(echo "$all_secrets" | jq -r ".${RELEASE_REGISTRY_USERNAME_SECRET}")
+          if [ -z "${RELEASE_REGISTRY_USERNAME}" ] || [ "null" = "${RELEASE_REGISTRY_USERNAME}" ]; then
+            echo "Secret ${RELEASE_REGISTRY_USERNAME_SECRET} not found !"
+            echo "Please add secret ${RELEASE_REGISTRY_USERNAME_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
+            exit 1
+          else
+            echo "Found secret ${RELEASE_REGISTRY_USERNAME_SECRET}"
+          fi
+          
+          RELEASE_REGISTRY_TOKEN_SECRET=REPOSITORY_TOKEN_$(echo "${repository_hostname}" | tr '[:lower:]' '[:upper:]' | tr '-' '_' | tr '.' '_')
+          echo "Looking for matching github secret ${RELEASE_REGISTRY_TOKEN_SECRET}"
+          RELEASE_REGISTRY_TOKEN=$(echo "$all_secrets" | jq -r ".${RELEASE_REGISTRY_TOKEN_SECRET}")
+          all_secrets=''
+          if [ -z "${RELEASE_REGISTRY_TOKEN}" ] || [ "null" = "${RELEASE_REGISTRY_TOKEN}" ]; then
+            echo "Secret ${RELEASE_REGISTRY_TOKEN_SECRET} not found !"
+            echo "Please add secret ${RELEASE_REGISTRY_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
+            exit 1
+          else
+            echo "Found secret ${RELEASE_REGISTRY_TOKEN_SECRET}"
+          fi
+          
+          echo "RELEASE_REGISTRY_USERNAME=${RELEASE_REGISTRY_USERNAME}" >> "$GITHUB_ENV"
+          echo "RELEASE_REGISTRY_TOKEN=${RELEASE_REGISTRY_TOKEN}" >> "$GITHUB_ENV"
+
       - name: Set apt repository name
         id: set-apt-repo-name
         shell: bash
@@ -199,9 +237,6 @@ jobs:
       - name: Ensure apt repository exists
         if: needs.extract-collectors.outputs.deliverable == 'true'
         run: |
-            echo curl -s -o output.json -w "%{http_code}" --header 'Content-Type: application/json' \
-                        -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
-                        "${NEXUS_URL}/service/rest/v1/repositories/${APT_REPO_NAME}"
             response=$(curl -s -o output.json -w "%{http_code}\n" --header 'Content-Type: application/json' \
                         -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
                         "${NEXUS_URL}/service/rest/v1/repositories/${APT_REPO_NAME}")
@@ -216,7 +251,7 @@ jobs:
               rm -f gpg_key_base64.txt gpg_key.pem
               # Create the nexus repository
               curl --fail --header "Content-Type: application/json" \
-                -u "${{ secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM }}:${{ secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM }}"  \
+                -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
                 "${NEXUS_URL}/service/rest/v1/repositories/apt/hosted/" \
                 -d "{  \"name\": \"${APT_REPO_NAME}\", \"online\": true, \"storage\": {\"blobStoreName\": \"${NEXUS_APT_REPO_BLOBSTORE}\",\"strictContentTypeValidation\": true,\"writePolicy\": \"${APT_REPO_WRITE_POLICY}\"}, \
                 \"apt\": {\"distribution\": \"${NEXUS_APT_DISTRIBUTION_NAME}\"}, \"aptSigning\": { \"keypair\": \"${key}\",\"passphrase\": \"${{ secrets.APT_GPG_PASSPHRASE }}\"}}"
@@ -227,7 +262,31 @@ jobs:
               cat output.json
               exit 1
             fi
-  
+
+      - name: Ensure conan repository exists
+        if: needs.extract-collectors.outputs.deliverable == 'true'
+        run: |
+          conan_release_repository_url="${{ needs.extract-collectors.outputs.conan_release_remote_url }}"
+          repository_url_base=$(echo "${conan_release_repository_url}" | cut -d'/' -f1-3)
+          conan_release_repository_name="${{ needs.extract-collectors.outputs.conan_release_repository_name }}"
+          response=$(curl -s -o output.json -w "%{http_code}\n" --header 'Content-Type: application/json' \
+                      -u "${{ env.RELEASE_REGISTRY_USERNAME }}:${{ env.RELEASE_REGISTRY_TOKEN }}" \
+                      "${repository_url_base}/service/rest/v1/repositories/${conan_release_repository_name}")
+          if [ "${response}" = "200" ]; then
+            echo "Repository ${conan_release_repository_name} already exists. Skipping creation...."
+          elif [ "${response}" = "404" ]; then
+            echo "Repository ${conan_release_repository_name} does not exist. Creating it..."
+            curl --fail --header "Content-Type: application/json" \
+              -u "${{ env.RELEASE_REGISTRY_USERNAME }}:${{ env.RELEASE_REGISTRY_TOKEN }}" \
+              "${repository_url_base}/service/rest/v1/repositories/conan/hosted/" \
+              -d "{  \"name\": \"${conan_release_repository_name}\", \"online\": true, \"storage\": {\"blobStoreName\": \"${NEXUS_CONAN_REPO_BLOBSTORE}\",\"strictContentTypeValidation\": true,\"writePolicy\": \"allow\"}}"
+          else
+            echo "Repository ${conan_release_repository_name} cannot be found. But error is not 404."
+            echo "Http error: ${response}"
+            echo "Response output:"
+            cat output.json
+            exit 1
+          fi
 
   # Should be done for each pair profile, collector
   #  - profile because bianry artefact are diffrent depending on architecture
@@ -237,7 +296,7 @@ jobs:
     needs:
       - preflight-checks
       - extract-collectors
-      - apt-preparation
+      - repositories-preparation
     strategy:
       fail-fast: false
       matrix:
@@ -303,14 +362,14 @@ jobs:
             sep=" "
           done < tmp_input;
           echo "collector requires ${requires}"
-          ${{ env.CONAN }} remote disable "${{ needs.extract-collectors.outputs.release_repo_name}}" 
+          ${{ env.CONAN }} remote disable "${{ needs.extract-collectors.outputs.conan_release_remote_name}}" 
           # shellcheck disable=SC2086
           ${{ env.CONAN }} install ${requires} -pr:h "${{ matrix.profile }}" --deployer release --deployer-folder=to_conan
           if [ "${{needs.extract-collectors.outputs.deliverable}}" = 'true' ]; then
             # shellcheck disable=SC2086
             ${{ env.CONAN }} install ${requires} -pr:h "${{ matrix.profile }}" --deployer delivery --deployer-folder=to_apt
           fi  
-          ${{ env.CONAN }} remote enable "${{ needs.extract-collectors.outputs.release_repo_name}}" 
+          ${{ env.CONAN }} remote enable "${{ needs.extract-collectors.outputs.conan_release_remote_name}}" 
 
       - name: Upload to conan
         id: upload
@@ -348,7 +407,7 @@ jobs:
             gh auth login --with-token < mytoken.txt
             rm mytoken.txt
 
-            if [ "${{ needs.extract-collectors.outputs.from_repository_url}}" != "${{ needs.extract-collectors.outputs.release_repo_url}}" ]; then
+            if [ "${{ needs.extract-collectors.outputs.from_repository_url}}" != "${{ needs.extract-collectors.outputs.conan_release_remote_url}}" ]; then
               : # ---------- BRANCH ---------------------------------------
               : # Create branch systematically if not existing , update it to the sha
               : # of the source tag used for creating the clone package if it already exist
@@ -389,8 +448,8 @@ jobs:
               : # conan download is needed to also get exports_sources
               echo "Download package ${package} with version ${version}"
               ${{ env.CONAN }} download -r FROM "$package/$version"
-              echo "Upload package ${package} with version ${version} to ${{ needs.extract-collectors.outputs.release_repo_name }}"
-              ${{ env.CONAN }} upload -r "${{ needs.extract-collectors.outputs.release_repo_name }}" "$package/$version" 
+              echo "Upload package ${package} with version ${version} to ${{ needs.extract-collectors.outputs.conan_release_remote_name }}"
+              ${{ env.CONAN }} upload -r "${{ needs.extract-collectors.outputs.conan_release_remote_name }}" "$package/$version" 
 
             fi  
 
@@ -426,7 +485,7 @@ jobs:
               echo "uploading ${deb}"
               curl --fail -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
                 -H "Content-Type: multipart/form-data" --data-binary \
-                "@${deb}" "${NEXUS_URL}/repository/${{ needs.apt-preparation.outputs.apt-repo-name }}/" 
+                "@${deb}" "${NEXUS_URL}/repository/${{ needs.repositories-preparation.outputs.apt-repo-name }}/" 
             done 
 
       - name: 'Upload bundle release packages contents'
@@ -448,7 +507,7 @@ jobs:
       - preflight-checks
       - extract-collectors        
       - clone-workspace
-    if: needs.extract-collectors.outputs.from_repository_url != needs.extract-collectors.outputs.release_repo_url
+    if: needs.extract-collectors.outputs.from_repository_url != needs.extract-collectors.outputs.conan_release_remote_url
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -501,7 +560,7 @@ jobs:
 
   dispatch-rebuild:
     runs-on: ubuntu-latest
-    if:  inputs.dispath-to-collectors && needs.extract-collectors.outputs.release_repo_url == needs.extract-collectors.outputs.from_repository_url
+    if:  inputs.dispath-to-collectors && needs.extract-collectors.outputs.conan_release_remote_url == needs.extract-collectors.outputs.from_repository_url
     needs:
       - extract-collectors
       - clone-workspace
