@@ -43,17 +43,6 @@ on:
         required: false
         type: string
         default: ''
-      rebuild_cause:
-        description: 'To know the rebuild cause (dispatch from another lib)'
-        default: ''
-        required: false
-        type: string
-      linked_commit:
-        description: 'To have the link to source code that changed'
-        default: ''
-        required: false
-        type: string
-        
 
 env:
   SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
@@ -349,6 +338,4 @@ jobs:
           context=$(yq e '.bundle' "${CONAN_CONTEXT_PATH}")
           gh workflow run "delivery.yml" \
             --repo "${context}" \
-            --ref "${{ github.ref_name }}" \
-            --field rebuild_cause="${{inputs.rebuild_cause}}" \
-            --field linked_commit="${{inputs.linked_commit}}"
+            --ref "${{ github.ref_name }}"    
