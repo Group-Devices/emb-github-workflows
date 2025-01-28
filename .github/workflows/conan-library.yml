@@ -12,7 +12,7 @@ on:
         description: 'Enable or not the SonarQube analysis'
         required: false
         type: boolean
-        default: true
+        default: false
       enable-rebuild-collectors:
         description: 'Enable or not the rebuild of collectors'
         required: false
@@ -53,7 +53,7 @@ env:
 
 jobs:
   generate-conan-context:
-    runs-on: voqa-ubuntu-22-04
+    runs-on: voqa-eks-runner
     if: inputs.run-as-fast-build == false
     container:
       image: docker-internal.it.voqa.com/aurora-compiler:main
@@ -111,7 +111,7 @@ jobs:
     steps:
       - run: echo "Will run a SonarQube analysis"
   build-and-upload:
-    runs-on: voqa-ubuntu-22-04
+    runs-on: voqa-eks-runner
     if: always() && (inputs.conan-profiles != '' || needs.unit-tests.result == 'success')
     needs:
       - generate-conan-context
