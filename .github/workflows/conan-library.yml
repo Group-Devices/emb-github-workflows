@@ -100,7 +100,7 @@ jobs:
           cp -v 'coverage/junit-results.xml' 'ci-report'
           cp -v 'coverage/coverage.info' 'ci-report'
       - name: Publish LCOV Report
-        uses: terencetcf/github-actions-lcov-minimum-coverage-checker@v1
+        uses: zgosalvez/github-actions-report-lcov@v1
         if: success() 
         with:
           coverage-file: coverage/coverage.info
