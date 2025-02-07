@@ -96,8 +96,9 @@ jobs:
       - run: bash test.sh
       - name: Extract test report
         run: |
-          mkdir -p ci-report
-          find ~/.conan2 -name junit-results.xml -exec cp {} ci-report/ \; || echo "Not able to find test results"
+          mkdir -p 'ci-report'
+          cp -v 'coverage/junit-results.xml' 'ci-report'
+          cp -v 'coverage/coverage.info' 'ci-report'
       - name: Publish Test Report
         uses: mikepenz/action-junit-report@v4
         if: success() || failure()
