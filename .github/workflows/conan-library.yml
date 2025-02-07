@@ -97,8 +97,8 @@ jobs:
       - name: Extract test report
         run: |
           mkdir -p ci-report
-          cp coverage/junit-results.xml ci-report/ \; || echo "Not able to find test results"
-          cp coverage/coverage.info ci-report
+          cp -v coverage/junit-results.xml ci-report
+          cp -v coverage/coverage.info ci-report
           ls *
       - name: Publish LCOV Report
         uses: romeovs/lcov-reporter-action@v0.2.16
