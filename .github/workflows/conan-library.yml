@@ -97,8 +97,12 @@ jobs:
       - name: Extract test report
         run: |
           mkdir -p 'ci-report'
-          cp -v 'coverage/junit-results.xml' 'ci-report'
-          cp -v 'coverage/coverage.info' 'ci-report'
+          if [ -e coverage/junit-results.xml ]; then
+              cp -v 'coverage/junit-results.xml' 'ci-report'
+          fi 
+          if [ -e coverage/COVERAGE.INFO ]; then
+              cp -v 'coverage/coverage.info' 'ci-report'
+          FI
       - name: Publish Test Report
         uses: mikepenz/action-junit-report@v4
         if: success() || failure()
