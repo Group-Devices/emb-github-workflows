@@ -174,7 +174,6 @@ jobs:
     steps:
       - name: Set repository authentication
         id: set-repository-authentication
-        if: needs.extract-collectors.outputs.deliverable == 'true'
         run: |
           conan_release_remote_url="${{ needs.extract-collectors.outputs.conan_release_remote_url }}"
           repository_hostname=$(echo "${conan_release_remote_url}" | cut -d'/' -f3 | cut -d':' -f1)
@@ -264,7 +263,6 @@ jobs:
             fi
 
       - name: Ensure conan repository exists
-        if: needs.extract-collectors.outputs.deliverable == 'true'
         run: |
           conan_release_repository_url="${{ needs.extract-collectors.outputs.conan_release_remote_url }}"
           repository_url_base=$(echo "${conan_release_repository_url}" | cut -d'/' -f1-3)
