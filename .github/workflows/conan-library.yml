@@ -115,6 +115,7 @@ jobs:
           
       - name: Upload junit-results.xml
         uses: actions/upload-artifact@v4
+        if: success() || failure()
         with:
           name: ci-report
           path: ci-report/junit-results.xml
