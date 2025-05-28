@@ -72,8 +72,6 @@ jobs:
   unit-tests:
     runs-on: voqa-ubuntu-22-04
     if: inputs.run-as-fast-build == false
-    permissions:
-       pull-requests: write
     outputs:
       status: ${{ job.status }}
     container:
