@@ -113,17 +113,6 @@ jobs:
           include_passed: true
           detailed_summary: true
           
-      - name: Compress Test Coverage
-        run: |
-          mkdir -p artifacts
-          tar -czf artifacts/coverage-report.tar.gz -C ci-report coverage.info
-
-      - name: Upload compressed coverage
-        uses: actions/upload-artifact@v4
-        with:
-           name: compressed-coverage
-           path: artifacts/ 
-          
   quality-analysis:
     runs-on: ubuntu-latest
     needs:
