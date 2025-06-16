@@ -105,6 +105,13 @@ jobs:
           if [ -e coverage/coverage.info ]; then
               cp -v 'coverage/coverage.info' 'ci-report'
           fi
+      - name: run logs if fail
+        if: failure()
+        run: |
+            LAST_LOG=$(ls -t coverage/Testing/Temporary/LastTest_*.log | head -n 1)
+            echo "--> LOGS "
+            cat "$LAST_LOG"
+          
       - name: Publish Test Report
         uses: mikepenz/action-junit-report@v4
         if: success() || failure()
