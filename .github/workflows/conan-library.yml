@@ -107,10 +107,8 @@ jobs:
           fi
       - name: run logs if fail
         if: failure()
-        run: |
-            LAST_LOG=$(ls -t coverage/Testing/Temporary/LastTest_*.log | head -n 1)
-            echo "--> LOGS "
-            cat "$LAST_LOG"
+        run: 
+          cat coverage/Testing/Temporary/LastTest*
           
       - name: Publish Test Report
         uses: mikepenz/action-junit-report@v4
