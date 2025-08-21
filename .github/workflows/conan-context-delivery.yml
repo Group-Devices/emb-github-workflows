@@ -286,6 +286,28 @@ jobs:
             exit 1
           fi
 
+  alm-release:
+    runs-on: ubuntu-latest
+    needs:
+      - preflight-checks
+      - extract-collectors
+      - repositories-preparation
+    steps:
+      #- name: Checkout repository
+      #  uses: actions/checkout@v4
+
+      - name: Install ALM CLI
+        run: |
+          pip install --upgrade pip
+          pip install --index-url "https://${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}@repository.it.voqa.com/repository/voqa-pypi-snapshots/simple" almcli
+  
+      - name: Create ALM release
+        run: |
+          echo "Create ALM release"
+          DELIVERY_NAME=${{ needs.preflight-checks.outputs.delivery-name }}
+          echo "delivery-name=${DELIVERY_NAME}" >> "$GITHUB_OUTPUT"
+          almcli createRelease --env VoqaProd --config ${CONAN_CONTEXT_PATH}
+          almcli publishRelease --env VoqaProd --config ${CONAN_CONTEXT_PATH}
   # Should be done for each pair profile, collector
   #  - profile because bianry artefact are diffrent depending on architecture
   #  - collector : to allow adding "project" personnalization to the apt repo
