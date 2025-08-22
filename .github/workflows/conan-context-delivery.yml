@@ -310,9 +310,7 @@ jobs:
           echo "Create ALM release"
           DELIVERY_NAME=${{ needs.preflight-checks.outputs.delivery-name }}
           echo "delivery-name=${DELIVERY_NAME}" >> "$GITHUB_OUTPUT"
-          pwd
-          ls -l
-          find .. -iname "*.yml"
+          cat ${CONAN_CONTEXT_PATH}
           almcli createRelease --releaseFile=${CONAN_CONTEXT_PATH} --username=${{secrets.ALM_USERNAME}} --password=${{secrets.ALM_PASSWORD}} --url=https://webadmin.api.dpu.prod.assurenextgen.com
           echo "almcli createRelease exited with code $?"
           [ $? -eq 0 ] || (echo "almcli createRelease failed" && exit 1)
