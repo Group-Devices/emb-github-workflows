@@ -308,17 +308,17 @@ jobs:
         shell: bash
         run: |
           echo "Create ALM release"
-          res=$(almcli checkRelease --releaseFile=${CONAN_CONTEXT_PATH} --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com")
-          if [ $res -eq 0 ]; then
+          res=$(almcli checkRelease --releaseFile="${CONAN_CONTEXT_PATH}" --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com")
+          if [ ${res} -eq 0 ]; then
             echo "Release already exists, skipping creation"
             exit 0
           else
             echo "Release does not exist or is different, try creating it"
           fi
-          res=$(almcli createRelease --releaseFile=${CONAN_CONTEXT_PATH} --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com")
-          [ $res -eq 0 ] || (echo "almcli createRelease failed" && exit 1)
-          res=$(almcli publishRelease --releaseFile=${CONAN_CONTEXT_PATH} --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com")
-          [ $res -eq 0 ] || (echo "almcli publishRelease failed" && exit 1)
+          res=$(almcli createRelease --releaseFile="${CONAN_CONTEXT_PATH}" --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com")
+          [ ${res} -eq 0 ] || (echo "almcli createRelease failed" && exit 1)
+          res=$(almcli publishRelease --releaseFile="${CONAN_CONTEXT_PATH}" --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com")
+          [ ${res} -eq 0 ] || (echo "almcli publishRelease failed" && exit 1)
 
   # Should be done for each pair profile, collector
   #  - profile because bianry artefact are diffrent depending on architecture
