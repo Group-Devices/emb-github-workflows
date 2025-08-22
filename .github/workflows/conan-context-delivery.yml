@@ -308,8 +308,10 @@ jobs:
         shell: bash
         run: |
           echo "Create ALM release"
-          almcli checkRelease --releaseFile=${CONAN_CONTEXT_PATH} --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com"
-          if [ $? -eq 0 ]; then
+          
+          if [ 
+            almcli checkRelease --releaseFile=${CONAN_CONTEXT_PATH} --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com" -eq 0 
+            ]; then
             echo "Release already exists, skipping creation"
             exit 0
           else
