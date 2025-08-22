@@ -145,8 +145,6 @@ jobs:
           echo "Release name: ${release_name}"
           echo "release_name=${release_name}" >> "$GITHUB_OUTPUT"
           upload_repository=$(yq -r ".upload" "${CONAN_CONTEXT_PATH}")
-          echo "CWD: $(pwd)"
-          ls -l
           echo "conan_release_remote_name=${upload_repository}"
           echo "conan_release_remote_name=${upload_repository}" >> "$GITHUB_OUTPUT"
           upload_repository_url=$(yq -r ".repositories.${upload_repository}" "${CONAN_CONTEXT_PATH}")
@@ -309,7 +307,7 @@ jobs:
         run: |
           echo "Create ALM release"
           res=$(almcli checkRelease --releaseFile="${CONAN_CONTEXT_PATH}" --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com")
-          if [ ${res} -eq 0 ]; then
+          if [ "${res}" = "0" ]; then
             echo "Release already exists, skipping creation"
             exit 0
           else
