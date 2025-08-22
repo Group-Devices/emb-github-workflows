@@ -295,8 +295,8 @@ jobs:
       - extract-collectors
       - repositories-preparation
     steps:
-      #- name: Checkout repository
-      #  uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Install ALM CLI
         run: |
