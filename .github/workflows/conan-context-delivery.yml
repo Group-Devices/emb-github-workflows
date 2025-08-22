@@ -307,7 +307,7 @@ jobs:
           DELIVERY_NAME=${{ needs.preflight-checks.outputs.delivery-name }}
           echo "delivery-name=${DELIVERY_NAME}" >> "$GITHUB_OUTPUT"
           almcli createRelease --releaseFile=${CONAN_CONTEXT_PATH} --username=${{secrets.ALM_USERNAME}} --password=${{secrets.ALM_PASSWORD}}
-          almcli publishRelease --releaseFile=${CONAN_CONTEXT_PATH}
+          almcli publishRelease --releaseFile=${CONAN_CONTEXT_PATH} --username=${{secrets.ALM_USERNAME}} --password=${{secrets.ALM_PASSWORD}}
   # Should be done for each pair profile, collector
   #  - profile because bianry artefact are diffrent depending on architecture
   #  - collector : to allow adding "project" personnalization to the apt repo
