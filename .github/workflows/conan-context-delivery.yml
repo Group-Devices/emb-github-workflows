@@ -303,7 +303,6 @@ jobs:
           pip install --upgrade --index-url "https://${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}@repository.it.voqa.com/repository/voqa-pypi-snapshots/simple" almcli
   
       - name: Create ALM release
-        id: Create ALM release
         shell: bash
         run: |
           echo "Create ALM release"
