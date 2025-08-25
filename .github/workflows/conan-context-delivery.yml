@@ -290,8 +290,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - preflight-checks
-      - extract-collectors
-      - repositories-preparation
+      - check-conan-context
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -316,9 +315,15 @@ jobs:
             echo "Release does not exist or is different, try creating it"
           fi
           res=$(almcli createRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com")
-          [ "${res}" = "0" ] || (echo "almcli createRelease failed" && exit 1)
+          if [ "${res}" = "0" ]; then
+            echo "almcli createRelease failed"
+            exit 1
+          fi
           res=$(almcli publishRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com")
-          [ "${res}" = "0" ] || (echo "almcli publishRelease failed" && exit 1)
+          if [ "${res}" = "0" ]; then
+            echo "almcli publishRelease failed"
+            exit 1
+          fi
 
   # Should be done for each pair profile, collector
   #  - profile because bianry artefact are diffrent depending on architecture
