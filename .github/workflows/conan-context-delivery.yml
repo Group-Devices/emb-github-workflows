@@ -315,7 +315,7 @@ jobs:
             exit 0
           else
             echo "Release does not exist or is different, try creating it"
-            res=`almcli createRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com"'
+            res=`almcli createRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com"`
             if [ "${res}" = "0" ]; then
               echo "almcli createRelease failed"
               set -e
