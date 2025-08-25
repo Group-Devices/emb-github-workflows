@@ -305,6 +305,7 @@ jobs:
       - name: Create ALM release
         shell: bash
         run: |
+          set -o pipefail
           echo "Create ALM release"
           res=$(almcli checkRelease --releaseFile="${CONAN_CONTEXT_PATH}" --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com")
           if [ "${res}" = "0" ]; then
