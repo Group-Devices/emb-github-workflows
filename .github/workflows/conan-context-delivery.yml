@@ -315,9 +315,9 @@ jobs:
           else
             echo "Release does not exist or is different, try creating it"
           fi
-          res=$(almcli createRelease --releaseFile="${CONAN_CONTEXT_PATH}" --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com")
+          res=$(almcli createRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com")
           [ "${res}" = "0" ] || (echo "almcli createRelease failed" && exit 1)
-          res=$(almcli publishRelease --releaseFile="${CONAN_CONTEXT_PATH}" --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com")
+          res=$(almcli publishRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com")
           [ "${res}" = "0" ] || (echo "almcli publishRelease failed" && exit 1)
 
   # Should be done for each pair profile, collector
