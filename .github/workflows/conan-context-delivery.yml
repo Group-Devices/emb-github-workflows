@@ -323,12 +323,17 @@ jobs:
             almcli createRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com"
             res=$?
             if [ "${res}" = "0" ]; then
-              echo "almcli createRelease failed"
-              exit 1
+              echo "almcli createRelease failed, try update"
+              almcli updateRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com"
+              res=$?
+              if [ "${res}" != "0" ]; then
+                echo "almcli updateRelease failed"
+                exit 1
+              fi
             fi
             almcli publishRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com"
             res=$?
-            if [ "${res}" = "0" ]; then
+            if [ "${res}" != "0" ]; then
               echo "almcli publishRelease failed"
               exit 1
             fi
