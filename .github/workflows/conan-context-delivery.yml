@@ -305,6 +305,13 @@ jobs:
         run: |
           set +e
           set +o pipefail
+          echo "Check is release is needed"
+          product=$(yq -r ".product" "${CONAN_CONTEXT_PATH}")
+          if [ "true" != "${product}" ]; then
+            echo "Not a product, skipping ALM release creation"
+            exit 0
+          fi  
+          echo "!!!! deliverable=$deliverable !!!!!!" 
           echo "Create ALM release"
           almcli checkRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com"
           res=$?
