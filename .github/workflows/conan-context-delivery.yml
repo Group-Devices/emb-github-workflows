@@ -309,10 +309,8 @@ jobs:
           echo "Create ALM release"
           almcli checkRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com"
           res=$?
-          echo res: $res
           if [ "${res}" = "0" ]; then
             echo "Release already exists, skipping creation"
-            #set -e
             exit 0
           else
             echo "Release does not exist or is different, try creating it"
@@ -320,14 +318,12 @@ jobs:
             res=$?
             if [ "${res}" = "0" ]; then
               echo "almcli createRelease failed"
-              #set -e
               exit 1
             fi
             almcli publishRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com"
             res=$?
             if [ "${res}" = "0" ]; then
               echo "almcli publishRelease failed"
-              #set -e
               exit 1
             fi
           fi
