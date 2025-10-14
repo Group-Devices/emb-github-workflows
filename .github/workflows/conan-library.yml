@@ -214,11 +214,11 @@ jobs:
               echo "${OWNER_GIT_TOKEN}" > mytoken.txt
               gh auth login --with-token < mytoken.txt
               rm mytoken.txt              
-              gh repo clone "$url"
               echo "extracting package name and version from $ref"
               name="${ref%/*}"
               prev="${ref#*/}"
               prev="${prev%#*}"
+              gh repo clone "$url" "$name"
               echo "name $name version $prev adding ripple build id"
               version="${prev%+*}"
               build="${prev#*+}"
