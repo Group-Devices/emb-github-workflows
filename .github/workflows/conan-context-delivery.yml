@@ -130,9 +130,11 @@ jobs:
       - name: 'Extract deliverable status of the bundle' 
         id: generate-delivery
         run: | 
-          deliverable=$(yq -r ".product" "${CONAN_CONTEXT_PATH}")
-          if [ "true" != "${deliverable}" ]; then
+          product_name=$(yq -r ".productName" "${CONAN_CONTEXT_PATH}")
+          if [ "null" = "${product_name}" ] || [ -z "${product_name}" ]; then
             deliverable="false"
+          else
+            deliverable="true"
           fi  
           echo "!!!! deliverable=$deliverable !!!!!!" 
           echo "deliverable=$deliverable" >> "$GITHUB_OUTPUT"   
@@ -213,8 +215,11 @@ jobs:
         shell: bash
         if: needs.extract-collectors.outputs.deliverable == 'true'
         run: |
-            : # TODO should come from context 
-            APT_PREFIX_NAME=voqa
+            APT_PREFIX_NAME=$(yq -r ".productName" "${CONAN_CONTEXT_PATH}")
+            if [ "null" = "${APT_PREFIX_NAME}" ] || [ -z "${APT_PREFIX_NAME}" ]; then
+              echo "No 'productName' in conan context : can not setup apt repository name"
+              exit 1
+            fi
             if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
               APT_REPO_NAME="${APT_PREFIX_NAME}-v${GITHUB_REF_NAME}"
               APT_REPO_WRITE_POLICY=allow_once
@@ -306,11 +311,11 @@ jobs:
           set +e
           set +o pipefail
           echo "Check is release is needed"
-          product=$(yq -r ".product" "${CONAN_CONTEXT_PATH}")
-          if [ "true" != "${product}" ]; then
-            echo "Not a product, skipping ALM release creation"
+          product_name=$(yq -r ".productName" "${CONAN_CONTEXT_PATH}")
+          if [ "null" = "${product_name}" ] || [ -z "${product_name}" ]; then
+            echo "No 'productName' in conan context : skipping ALM release creation"
             exit 0
-          fi  
+          fi
           echo "!!!! deliverable=$deliverable !!!!!!" 
           echo "Create ALM release"
           almcli checkRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com"
