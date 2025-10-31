@@ -52,7 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Check if conan-context.yml exists
         run: |
@@ -95,7 +95,7 @@ jobs:
       - check-conan-context
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Extract the collectors list
         id: generate-collectors-list
@@ -175,7 +175,8 @@ jobs:
       apt-repo-name: ${{ steps.set-apt-repo-name.outputs.apt-repo-name }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
       - name: Set repository authentication
         id: set-repository-authentication
         run: |
@@ -299,7 +300,7 @@ jobs:
       - check-conan-context
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install ALM CLI
         run: |
@@ -371,7 +372,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: Set safe git path
         run: |
@@ -569,8 +570,7 @@ jobs:
     if: needs.extract-collectors.outputs.from_repository_url != needs.extract-collectors.outputs.conan_release_remote_url
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-      
+        uses: actions/checkout@v5
 
       - name: remove clone request if any
         id: finalize
