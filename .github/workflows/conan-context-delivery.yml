@@ -311,9 +311,9 @@ jobs:
           set +e
           set +o pipefail
           echo "Check is release is needed"
-          product_name=$(yq -r ".productName" "${CONAN_CONTEXT_PATH}")
-          if [ "null" = "${product_name}" ] || [ -z "${product_name}" ]; then
-            echo "No 'productName' in conan context : skipping ALM release creation"
+          alm_release=$(yq -r ".almRelease" "${CONAN_CONTEXT_PATH}")
+          if [ "null" = "${alm_release}" ] || [ -z "${alm_release}" ]; then
+            echo "No 'almRelease' in conan context : skipping ALM release creation"
             exit 0
           fi
           echo "!!!! deliverable=$deliverable !!!!!!" 
