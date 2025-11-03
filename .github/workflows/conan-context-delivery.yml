@@ -52,7 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Check if conan-context.yml exists
         run: |
@@ -86,6 +86,7 @@ jobs:
       collectors-list: ${{ steps.generate-collectors-list.outputs.list }}
       build-profiles-list: ${{ steps.generate-build-profiles-list.outputs.list }}
       deliverable: ${{ steps.generate-delivery.outputs.deliverable }}
+      product_name: ${{ steps.generate-delivery.outputs.product_name }}
       from_repository_url: ${{ steps.generate-release-info.outputs.from_repository_url }}
       release_name: ${{ steps.generate-release-info.outputs.release_name }}
       conan_release_remote_name: ${{ steps.generate-release-info.outputs.conan_release_remote_name }}
@@ -95,7 +96,7 @@ jobs:
       - check-conan-context
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Extract the collectors list
         id: generate-collectors-list
@@ -138,6 +139,7 @@ jobs:
           fi  
           echo "!!!! deliverable=$deliverable !!!!!!" 
           echo "deliverable=$deliverable" >> "$GITHUB_OUTPUT"   
+          echo "product_name=$product_name" >> "$GITHUB_OUTPUT"
           
       - name: Extract release info
         id: generate-release-info
@@ -215,9 +217,9 @@ jobs:
         shell: bash
         if: needs.extract-collectors.outputs.deliverable == 'true'
         run: |
-            APT_PREFIX_NAME=$(yq -r ".productName" "${CONAN_CONTEXT_PATH}")
+            APT_PREFIX_NAME=$product_name
             if [ "null" = "${APT_PREFIX_NAME}" ] || [ -z "${APT_PREFIX_NAME}" ]; then
-              echo "No 'productName' in conan context : can not setup apt repository name"
+              echo "product_name null or empty : can not setup apt repository name"
               exit 1
             fi
             if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
@@ -297,7 +299,7 @@ jobs:
       - check-conan-context
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install ALM CLI
         run: |
@@ -369,7 +371,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: Set safe git path
         run: |
@@ -567,8 +569,7 @@ jobs:
     if: needs.extract-collectors.outputs.from_repository_url != needs.extract-collectors.outputs.conan_release_remote_url
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-      
+        uses: actions/checkout@v5
 
       - name: remove clone request if any
         id: finalize
