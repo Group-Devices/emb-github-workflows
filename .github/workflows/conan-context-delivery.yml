@@ -313,8 +313,9 @@ jobs:
           set +e
           set +o pipefail
           echo "Check is release is needed"
-          if [ "null" = "${product_name}" ] || [ -z "${product_name}" ]; then
-            echo "product_name null or empty : can not setup apt repository name"
+          alm_release=$(yq -r ".almRelease" "${CONAN_CONTEXT_PATH}")
+          if [ "null" = "${alm_release}" ] || [ -z "${alm_release}" ]; then
+            echo "No 'almRelease' in conan context : skipping ALM release creation"
             exit 0
           fi
           echo "!!!! deliverable=$deliverable !!!!!!" 
