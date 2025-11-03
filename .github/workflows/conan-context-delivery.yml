@@ -137,7 +137,7 @@ jobs:
           else
             deliverable="true"
           fi  
-          echo "!!!! deliverable=$deliverable !!!!!!" 
+          echo "!!!! deliverable=$deliverable / product_name=$product_name !!!!!!" 
           echo "deliverable=$deliverable" >> "$GITHUB_OUTPUT"   
           echo "product_name=$product_name" >> "$GITHUB_OUTPUT"
           
@@ -217,7 +217,7 @@ jobs:
         shell: bash
         if: needs.extract-collectors.outputs.deliverable == 'true'
         run: |
-            APT_PREFIX_NAME=$product_name
+            APT_PREFIX_NAME=${{ needs.extract-collectors.outputs.product_name }}
             if [ "null" = "${APT_PREFIX_NAME}" ] || [ -z "${APT_PREFIX_NAME}" ]; then
               echo "product_name null or empty : can not setup apt repository name"
               exit 1
