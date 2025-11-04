@@ -239,7 +239,7 @@ jobs:
             echo "APT_REPO_WRITE_POLICY=${APT_REPO_WRITE_POLICY}" >> "$GITHUB_ENV"
             echo "apt-repo-name=${APT_REPO_NAME}" >> "$GITHUB_OUTPUT"
             NEXUS_APT_DISTRIBUTION_NAME=${APT_PREFIX_NAME}
-            echo "NEXUS_APT_DISTRIBUTION_NAME=${NEXUS_APT_DISTRIBUTION_NAME}" >> "$GITHUB_OUTPUT"
+            echo "NEXUS_APT_DISTRIBUTION_NAME=${NEXUS_APT_DISTRIBUTION_NAME}" >> "$GITHUB_ENV"
 
       - name: Ensure apt repository exists
         if: needs.extract-collectors.outputs.deliverable == 'true'
