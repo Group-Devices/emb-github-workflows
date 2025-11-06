@@ -393,7 +393,9 @@ jobs:
           secret_username_to_extract=REPOSITORY_USERNAME_$(echo "$repo_url_target" | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')
           echo "Extracting github secret ${secret_username_to_extract}"
           all_secrets='${{ tojson(secrets) }}'
+          echo "all secrest $all_secrets"
           secret_username=$(echo $all_secrets | jq -r ".${secret_username_to_extract}")
+          echo "secret_username $secret_username"
           if [ "null" = "${secret_username}" ] || [ -z "${secret_username}" ]; then
             echo "Secret ${secret_username_to_extract} not found !"
             echo "Please add secret ${secret_username_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
