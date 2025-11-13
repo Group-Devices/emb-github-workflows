@@ -56,7 +56,10 @@ jobs:
     runs-on: eks-runner-linux-x64-medium
     if: inputs.run-as-fast-build == false
     container:
-      image: ghcr.io/actions/actions-runner:latest
+      image: docker-internal.it.voqa.com/aurora-compiler:main
+      credentials:
+        username: ${{ secrets.DOCKER_INTERNAL_REGISTRY_USERNAME}}
+        password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
     outputs:
       build-profile-list: ${{ steps.generate-conan-context.outputs.build-profile-list }}
       collectors-list: ${{ steps.generate-conan-context.outputs.collectors-list }}
@@ -72,7 +75,10 @@ jobs:
     outputs:
       status: ${{ job.status }}
     container:
-      image: ghcr.io/actions/actions-runner:latest
+      image: docker-internal.it.voqa.com/aurora-compiler:main
+      credentials:
+        username: ${{ secrets.DOCKER_INTERNAL_REGISTRY_USERNAME}}
+        password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
     needs:
       - generate-conan-context
     steps:
