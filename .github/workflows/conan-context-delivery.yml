@@ -169,7 +169,9 @@ jobs:
           echo "from_repository_url=$from_repository_url" >> "$GITHUB_OUTPUT"
 
   repositories-preparation:
-    runs-on: voqa-ubuntu-22-04
+    runs-on: eks-runner-linux-x64-medium
+    container:
+      image: ghcr.io/actions/actions-runner:latest
     needs:
       - extract-collectors
     outputs:
@@ -351,7 +353,7 @@ jobs:
   #  - profile because bianry artefact are diffrent depending on architecture
   #  - collector : to allow adding "project" personnalization to the apt repo
   clone-workspace:
-    runs-on: voqa-ubuntu-22-04
+    runs-on: eks-runner-linux-x64-medium
     needs:
       - preflight-checks
       - extract-collectors
