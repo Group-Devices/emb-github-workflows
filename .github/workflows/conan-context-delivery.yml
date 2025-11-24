@@ -15,7 +15,6 @@ env:
   CONAN: "conan"   # echo conan for a dry run
   NEXUS_URL: "https://repository.it.voqa.com"
   NEXUS_APT_REPO_BLOBSTORE: "nexus-bs-voqa-prd-apt"
-  NEXUS_APT_DISTRIBUTION_NAME: "voqa"
   NEXUS_CONAN_REPO_BLOBSTORE: "nexus-bs-voqa-prd-conan"
 
 jobs:
@@ -52,7 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Check if conan-context.yml exists
         run: |
@@ -86,6 +85,7 @@ jobs:
       collectors-list: ${{ steps.generate-collectors-list.outputs.list }}
       build-profiles-list: ${{ steps.generate-build-profiles-list.outputs.list }}
       deliverable: ${{ steps.generate-delivery.outputs.deliverable }}
+      product_name: ${{ steps.generate-delivery.outputs.product_name }}
       from_repository_url: ${{ steps.generate-release-info.outputs.from_repository_url }}
       release_name: ${{ steps.generate-release-info.outputs.release_name }}
       conan_release_remote_name: ${{ steps.generate-release-info.outputs.conan_release_remote_name }}
@@ -95,7 +95,7 @@ jobs:
       - check-conan-context
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Extract the collectors list
         id: generate-collectors-list
@@ -130,12 +130,15 @@ jobs:
       - name: 'Extract deliverable status of the bundle' 
         id: generate-delivery
         run: | 
-          deliverable=$(yq -r ".product" "${CONAN_CONTEXT_PATH}")
-          if [ "true" != "${deliverable}" ]; then
+          product_name=$(yq -r ".productName" "${CONAN_CONTEXT_PATH}")
+          if [ "null" = "${product_name}" ] || [ -z "${product_name}" ]; then
             deliverable="false"
+          else
+            deliverable="true"
           fi  
-          echo "!!!! deliverable=$deliverable !!!!!!" 
+          echo "!!!! deliverable=$deliverable / product_name=$product_name !!!!!!" 
           echo "deliverable=$deliverable" >> "$GITHUB_OUTPUT"   
+          echo "product_name=$product_name" >> "$GITHUB_OUTPUT"
           
       - name: Extract release info
         id: generate-release-info
@@ -166,7 +169,9 @@ jobs:
           echo "from_repository_url=$from_repository_url" >> "$GITHUB_OUTPUT"
 
   repositories-preparation:
-    runs-on: voqa-ubuntu-22-04
+    runs-on: eks-runner-linux-x64-medium
+    container:
+      image: ghcr.io/actions/actions-runner:latest
     needs:
       - extract-collectors
     outputs:
@@ -213,8 +218,11 @@ jobs:
         shell: bash
         if: needs.extract-collectors.outputs.deliverable == 'true'
         run: |
-            : # TODO should come from context 
-            APT_PREFIX_NAME=voqa
+            APT_PREFIX_NAME=${{ needs.extract-collectors.outputs.product_name }}
+            if [ "null" = "${APT_PREFIX_NAME}" ] || [ -z "${APT_PREFIX_NAME}" ]; then
+              echo "product_name null or empty : can not setup apt repository name"
+              exit 1
+            fi
             if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
               APT_REPO_NAME="${APT_PREFIX_NAME}-v${GITHUB_REF_NAME}"
               APT_REPO_WRITE_POLICY=allow_once
@@ -227,12 +235,14 @@ jobs:
             else
               echo "Not able to determine which repository to use for github ref type ${GITHUB_REF_TYPE} and github ref name ${GITHUB_REF_NAME}"
               exit 1
-            fi          
+            fi
             echo "Repository \"${APT_REPO_NAME}\" will be created with write policy \"${APT_REPO_WRITE_POLICY}\"" 
             echo "APT_REPO_NAME=${APT_REPO_NAME}" >> "$GITHUB_ENV"
             echo "APT_REPO_WRITE_POLICY=${APT_REPO_WRITE_POLICY}" >> "$GITHUB_ENV"
             echo "apt-repo-name=${APT_REPO_NAME}" >> "$GITHUB_OUTPUT"
-  
+            NEXUS_APT_DISTRIBUTION_NAME=${APT_PREFIX_NAME}
+            echo "NEXUS_APT_DISTRIBUTION_NAME=${NEXUS_APT_DISTRIBUTION_NAME}" >> "$GITHUB_ENV"
+
       - name: Ensure apt repository exists
         if: needs.extract-collectors.outputs.deliverable == 'true'
         run: |
@@ -292,7 +302,7 @@ jobs:
       - check-conan-context
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install ALM CLI
         run: |
@@ -306,11 +316,11 @@ jobs:
           set +e
           set +o pipefail
           echo "Check is release is needed"
-          product=$(yq -r ".product" "${CONAN_CONTEXT_PATH}")
-          if [ "true" != "${product}" ]; then
-            echo "Not a product, skipping ALM release creation"
+          alm_release=$(yq -r ".almRelease" "${CONAN_CONTEXT_PATH}")
+          if [ "null" = "${alm_release}" ] || [ -z "${alm_release}" ]; then
+            echo "No 'almRelease' in conan context : skipping ALM release creation"
             exit 0
-          fi  
+          fi
           echo "!!!! deliverable=$deliverable !!!!!!" 
           echo "Create ALM release"
           almcli checkRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${{secrets.ALM_USERNAME}}" --password="${{secrets.ALM_PASSWORD}}" --url="https://webadmin.api.dpu.prod.assurenextgen.com"
@@ -343,7 +353,7 @@ jobs:
   #  - profile because bianry artefact are diffrent depending on architecture
   #  - collector : to allow adding "project" personnalization to the apt repo
   clone-workspace:
-    runs-on: voqa-ubuntu-22-04
+    runs-on: eks-runner-linux-x64-medium
     needs:
       - preflight-checks
       - extract-collectors
@@ -364,7 +374,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: Set safe git path
         run: |
@@ -385,7 +395,9 @@ jobs:
           secret_username_to_extract=REPOSITORY_USERNAME_$(echo "$repo_url_target" | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')
           echo "Extracting github secret ${secret_username_to_extract}"
           all_secrets='${{ tojson(secrets) }}'
+          echo "all secrest $all_secrets"
           secret_username=$(echo $all_secrets | jq -r ".${secret_username_to_extract}")
+          echo "secret_username $secret_username"
           if [ "null" = "${secret_username}" ] || [ -z "${secret_username}" ]; then
             echo "Secret ${secret_username_to_extract} not found !"
             echo "Please add secret ${secret_username_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
@@ -562,8 +574,7 @@ jobs:
     if: needs.extract-collectors.outputs.from_repository_url != needs.extract-collectors.outputs.conan_release_remote_url
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-      
+        uses: actions/checkout@v5
 
       - name: remove clone request if any
         id: finalize
