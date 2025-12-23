@@ -498,8 +498,9 @@ jobs:
                   -f "ref=refs/heads/release/${DELIVERY_NAME}" \
                   -f "sha=${sha}"
                 res=$(gh api --method POST -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' "/repos/${URL_REL}/git/refs" -f "ref=refs/heads/release/${DELIVERY_NAME}" -f "sha=${sha}")
-                if  [ $? != 0  ]; then
-                        echo "return value $?"
+                ret=$?
+                if  [ "$ret" != "0"  ]; then
+                        echo "return value $ret"
                         if [ "$(echo "$res"| jq -r .message)" != "Reference already exists" ]; then
                                 echo "ERROR $res"
                                 exit 1
