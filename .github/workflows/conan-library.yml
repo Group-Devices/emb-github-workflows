@@ -241,11 +241,12 @@ jobs:
           if [ ${{ github.event_name }} != 'pull_request' ]; then
             conan upload -r "${upload}" "${repo}" --confirm
           fi   
-      - name: Archive conan create log
+      - if: ${{ inputs.build-missing }}
+        name: upload build packages list
         uses: actions/upload-artifact@v4
         with:
-          name: conan-create-log-${{ matrix.profile }}
-          path: conan_create.log
+          name: build-list-${{ matrix.profile }}
+          path: build.json
   rebuild-collectors:
     runs-on: ubuntu-latest
     if: inputs.run-as-fast-build == false && inputs.enable-rebuild-collectors && github.event_name != 'pull_request'
