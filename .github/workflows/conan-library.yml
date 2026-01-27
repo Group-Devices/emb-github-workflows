@@ -128,7 +128,7 @@ jobs:
     steps:
       - run: echo "Will run a SonarQube analysis"
   build-and-upload:
-    runs-on: ${{ startsWith(github.event.repository.name, 'qt') && 'eks-runner-linux-x64-large' || 'eks-runner-linux-x64-medium' }}
+    runs-on: ${{ (startsWith(github.event.repository.name, 'qt') || startsWith(github.event.repository.name, 'everest-core'))  && 'eks-runner-linux-x64-large' || 'eks-runner-linux-x64-medium' }}
     if: always() && (inputs.conan-profiles != '' || needs.unit-tests.result == 'success')
     needs:
       - generate-conan-context
