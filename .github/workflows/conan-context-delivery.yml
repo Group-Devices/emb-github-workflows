@@ -556,18 +556,20 @@ jobs:
             done 
 
       - name: 'Upload bundle release packages contents'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: packages-release-${{ matrix.profile }}
           path: ./to_conan/packages.json
+          retention-days: 2
 
       - name: 'Upload bundle delivery packages contents'
         if: needs.extract-collectors.outputs.deliverable == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: packages-delivery-${{ matrix.profile }}
           path: ./to_apt/packages.json
-  
+          retention-days: 2
+
   finalize-cloning:
     runs-on: ubuntu-latest
     needs:

@@ -243,10 +243,11 @@ jobs:
           fi   
       - if: ${{ inputs.build-missing }}
         name: upload build packages list
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: build-list-${{ matrix.profile }}
           path: build-${{ matrix.profile }}.json
+          retention-days: 2
   rebuild-collectors:
     runs-on: ubuntu-latest
     if: inputs.run-as-fast-build == false && inputs.enable-rebuild-collectors && github.event_name != 'pull_request'
