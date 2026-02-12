@@ -1,0 +1,392 @@
+name: "Purge"
+
+on:
+  workflow_call:
+            
+env:
+  CONAN_CONTEXT_PATH: conan-context.yml
+  CONAN: "conan"   # echo conan for a dry run
+  NEXUS_URL: "https://repository.it.voqa.com"
+  NEXUS_APT_REPO_BLOBSTORE: "nexus-bs-voqa-prd-apt"
+  NEXUS_CONAN_REPO_BLOBSTORE: "nexus-bs-voqa-prd-conan"
+
+jobs:
+  preflight-checks:
+    runs-on: ubuntu-latest
+    outputs:
+      delivery-name: ${{ steps.determine-delivery-name.outputs.delivery-name }}
+    steps:
+      - name: Fail if not a release branch or a tag
+        id: fail-if-not-release-branch
+        run: |
+          if [ "${GITHUB_REF_TYPE}" != "tag" ] && [[ "${GITHUB_REF_NAME}" != "release/"* ]] && [[ "${GITHUB_REF_NAME}" != "main" ]]; then
+            echo "This workflow is intended to run on a release branch or a tag only"
+            exit 1
+          fi
+
+      - name: Determine delivery name
+        id: determine-delivery-name
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+              export DELIVERY_NAME="${GITHUB_REF_NAME}"
+          elif [ "${GITHUB_REF_TYPE}" = "branch" ] && [[ "${GITHUB_REF_NAME}" == "release/"* ]]; then
+              export DELIVERY_NAME="${GITHUB_REF_NAME#release/}"
+          elif [ "${GITHUB_REF_TYPE}" = "branch" ] && [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+              export DELIVERY_NAME="${GITHUB_REF_NAME}"
+          else
+              echo "Not able to determine which delivery name to use for github ref type ${GITHUB_REF_TYPE} and github ref name ${GITHUB_REF_NAME}"
+              exit 1
+          fi
+          echo "delivery-name=${DELIVERY_NAME} ref : ${GITHUB_REF_NAME}"
+          echo "delivery-name=${DELIVERY_NAME}" >> "$GITHUB_OUTPUT"
+
+  check-conan-context:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Check if conan-context.yml exists
+        run: |
+          if [ -f "conan-context.yml" ]; then
+            echo "File conan-context.yml exists."
+          else
+            echo "File conan-context.yml does not exist."
+            exit 1
+          fi
+
+      - name: Check if version match release in repositories
+        run: |
+          release_name=$(basename "${{ github.ref }}")
+          echo "Analyze conan context to check if upload repository match the expected release name"
+          upload_repository=$(yq -r ".upload" "${CONAN_CONTEXT_PATH}")
+          upload_repository_url=$(yq -r ".repositories.${upload_repository}" "${CONAN_CONTEXT_PATH}")
+          suffix="-${release_name}"
+          if [[ $upload_repository_url == *$suffix ]]; then
+            echo "The upload repository matches the expected release name ${release_name}"
+          else
+            echo "The upload repository does not match the expected release name"
+            echo "Conan is configured to upload to ${upload_repository}"
+            echo "The repository url of ${upload_repository} is ${upload_repository_url}"
+            echo "Current release name should be ${release_name}"
+            exit 1
+          fi
+
+  extract-collectors:
+    runs-on: ubuntu-latest
+    outputs:
+      collectors-list: ${{ steps.generate-collectors-list.outputs.list }}
+      build-profiles-list: ${{ steps.generate-build-profiles-list.outputs.list }}
+      deliverable: ${{ steps.generate-delivery.outputs.deliverable }}
+      product_name: ${{ steps.generate-delivery.outputs.product_name }}
+      from_repository_url: ${{ steps.generate-release-info.outputs.from_repository_url }}
+      release_name: ${{ steps.generate-release-info.outputs.release_name }}
+      conan_release_remote_name: ${{ steps.generate-release-info.outputs.conan_release_remote_name }}
+      conan_release_remote_url: ${{ steps.generate-release-info.outputs.conan_release_remote_url }}
+      conan_release_repository_name: ${{ steps.generate-release-info.outputs.conan_release_repository_name }}
+    needs:
+      - check-conan-context
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Extract the collectors list
+        id: generate-collectors-list
+        shell: bash
+        run: |
+          FIELD="build.collectors"
+          result=$(yq eval ".${FIELD} | type" "${CONAN_CONTEXT_PATH}")
+          if [ "$result" = "!!seq" ]; then
+            echo "list=$(yq -r ".${FIELD}" "${CONAN_CONTEXT_PATH}" -o=json | jq -c)" >> "$GITHUB_OUTPUT"
+          else
+            echo "File: ${CONAN_CONTEXT_PATH} - Field '$FIELD' does not exist or is not an array."
+            exit 1
+          fi
+  
+      - name: 'Extract the build profiles list'
+        id: generate-build-profiles-list
+        shell: bash
+        run: |
+          FIELD="build.profiles"
+          result=$(yq eval ".${FIELD} | type" "${CONAN_CONTEXT_PATH}")
+          if [ "$result" = "!!seq" ]; then
+            if [ -n "$APPEND_DEFAULT_PROFILE" ] && [ "$APPEND_DEFAULT_PROFILE" = "true" ]; then
+              echo "list=$(yq -r ".${FIELD}" "${CONAN_CONTEXT_PATH}" -o=json | jq -c ". + [\"default\"]")" >> "$GITHUB_OUTPUT"
+            else
+              echo "list=$(yq -r ".${FIELD}" "${CONAN_CONTEXT_PATH}" -o=json | jq -c)" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "File: ${CONAN_CONTEXT_PATH} - Field '$FIELD' does not exist or is not an array."
+            exit 1
+          fi
+          
+      - name: 'Extract deliverable status of the bundle' 
+        id: generate-delivery
+        run: | 
+          product_name=$(yq -r ".productName" "${CONAN_CONTEXT_PATH}")
+          if [ "null" = "${product_name}" ] || [ -z "${product_name}" ]; then
+            deliverable="false"
+          else
+            deliverable="true"
+          fi  
+          echo "!!!! deliverable=$deliverable / product_name=$product_name !!!!!!" 
+          echo "deliverable=$deliverable" >> "$GITHUB_OUTPUT"   
+          echo "product_name=$product_name" >> "$GITHUB_OUTPUT"
+          
+      - name: Extract release info
+        id: generate-release-info
+        shell: bash
+        run: |
+          release_name=$(basename "${{ github.ref }}")
+          echo "Release name: ${release_name}"
+          echo "release_name=${release_name}" >> "$GITHUB_OUTPUT"
+          upload_repository=$(yq -r ".upload" "${CONAN_CONTEXT_PATH}")
+          echo "conan_release_remote_name=${upload_repository}"
+          echo "conan_release_remote_name=${upload_repository}" >> "$GITHUB_OUTPUT"
+          upload_repository_url=$(yq -r ".repositories.${upload_repository}" "${CONAN_CONTEXT_PATH}")
+          echo "conan_release_remote_url=${upload_repository_url}"  >> "$GITHUB_OUTPUT"
+          echo "conan_release_repository_name=$(basename "${upload_repository_url}")" >> "$GITHUB_OUTPUT"
+
+          : # By default use upload url
+          from_repository_url=${upload_repository_url}
+          if [ "null" = "${upload_repository_url}" ] || [ -z "${from_repository_url}" ]; then
+            echo "upload field not found in conan context !"
+            echo "Please add it !"
+            exit 1
+          else
+            echo "Will use upload repository url: ${upload_repository_url}"
+            echo "Will use from repository url: ${from_repository_url}"
+          fi     
+          echo "from_repository_url=$from_repository_url" >> "$GITHUB_OUTPUT"
+
+  repositories-preparation:
+    runs-on: eks-runner-linux-x64-medium
+    container:
+      image: ghcr.io/actions/actions-runner:latest
+    needs:
+      - extract-collectors
+    outputs:
+      apt-repo-name: ${{ steps.set-apt-repo-name.outputs.apt-repo-name }}
+    steps:
+      - name: Set repository authentication
+        id: set-repository-authentication
+        run: |
+          conan_release_remote_url="${{ needs.extract-collectors.outputs.conan_release_remote_url }}"
+          repository_hostname=$(echo "${conan_release_remote_url}" | cut -d'/' -f3 | cut -d':' -f1)
+          echo "Extracting github token secret for repository ${repository_hostname}"
+          
+          # shellcheck disable=SC2086
+          all_secrets='${{ tojson(secrets) }}'
+          
+          RELEASE_REGISTRY_USERNAME_SECRET=REPOSITORY_USERNAME_$(echo "${repository_hostname}" | tr '[:lower:]' '[:upper:]' | tr '-' '_' | tr '.' '_')
+          echo "Looking for matching github secret ${RELEASE_REGISTRY_USERNAME_SECRET}"
+          RELEASE_REGISTRY_USERNAME=$(echo "$all_secrets" | jq -r ".${RELEASE_REGISTRY_USERNAME_SECRET}")
+          if [ -z "${RELEASE_REGISTRY_USERNAME}" ] || [ "null" = "${RELEASE_REGISTRY_USERNAME}" ]; then
+            echo "Secret ${RELEASE_REGISTRY_USERNAME_SECRET} not found !"
+            echo "Please add secret ${RELEASE_REGISTRY_USERNAME_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
+            exit 1
+          else
+            echo "Found secret ${RELEASE_REGISTRY_USERNAME_SECRET}"
+          fi
+          
+          RELEASE_REGISTRY_TOKEN_SECRET=REPOSITORY_TOKEN_$(echo "${repository_hostname}" | tr '[:lower:]' '[:upper:]' | tr '-' '_' | tr '.' '_')
+          echo "Looking for matching github secret ${RELEASE_REGISTRY_TOKEN_SECRET}"
+          RELEASE_REGISTRY_TOKEN=$(echo "$all_secrets" | jq -r ".${RELEASE_REGISTRY_TOKEN_SECRET}")
+          all_secrets=''
+          if [ -z "${RELEASE_REGISTRY_TOKEN}" ] || [ "null" = "${RELEASE_REGISTRY_TOKEN}" ]; then
+            echo "Secret ${RELEASE_REGISTRY_TOKEN_SECRET} not found !"
+            echo "Please add secret ${RELEASE_REGISTRY_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
+            exit 1
+          else
+            echo "Found secret ${RELEASE_REGISTRY_TOKEN_SECRET}"
+          fi
+          
+          echo "RELEASE_REGISTRY_USERNAME=${RELEASE_REGISTRY_USERNAME}" >> "$GITHUB_ENV"
+          echo "RELEASE_REGISTRY_TOKEN=${RELEASE_REGISTRY_TOKEN}" >> "$GITHUB_ENV"
+
+      - name: Set apt repository name
+        id: set-apt-repo-name
+        shell: bash
+        if: needs.extract-collectors.outputs.deliverable == 'true'
+        run: |
+            APT_PREFIX_NAME=${{ needs.extract-collectors.outputs.product_name }}
+            if [ "null" = "${APT_PREFIX_NAME}" ] || [ -z "${APT_PREFIX_NAME}" ]; then
+              echo "product_name null or empty : can not setup apt repository name"
+              exit 1
+            fi
+            if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+              APT_REPO_NAME="${APT_PREFIX_NAME}-v${GITHUB_REF_NAME}"
+              APT_REPO_WRITE_POLICY=allow_once
+            elif [ "${GITHUB_REF_TYPE}" = "branch" ] && [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+              APT_REPO_NAME="${APT_PREFIX_NAME}-${GITHUB_REF_NAME}"
+              APT_REPO_WRITE_POLICY=allow
+            elif [ "${GITHUB_REF_TYPE}" = "branch" ] && [[ "${GITHUB_REF_NAME}" == "release/"* ]]; then
+              APT_REPO_NAME="${APT_PREFIX_NAME}-${GITHUB_REF_NAME#release/*}"
+              APT_REPO_WRITE_POLICY=allow
+            else
+              echo "Not able to determine which repository to use for github ref type ${GITHUB_REF_TYPE} and github ref name ${GITHUB_REF_NAME}"
+              exit 1
+            fi
+            echo "Repository \"${APT_REPO_NAME}\" will be created with write policy \"${APT_REPO_WRITE_POLICY}\"" 
+            echo "APT_REPO_NAME=${APT_REPO_NAME}" >> "$GITHUB_ENV"
+            echo "APT_REPO_WRITE_POLICY=${APT_REPO_WRITE_POLICY}" >> "$GITHUB_ENV"
+            echo "apt-repo-name=${APT_REPO_NAME}" >> "$GITHUB_OUTPUT"
+            NEXUS_APT_DISTRIBUTION_NAME=${APT_PREFIX_NAME}
+            echo "NEXUS_APT_DISTRIBUTION_NAME=${NEXUS_APT_DISTRIBUTION_NAME}" >> "$GITHUB_ENV"
+
+  # Should be done for each pair profile, collector
+  #  - profile because bianry artefact are diffrent depending on architecture
+  #  - collector : to allow adding "project" personnalization to the apt repo
+  purge-workspace:
+    runs-on: eks-runner-linux-x64-medium
+    needs:
+      - preflight-checks
+      - extract-collectors
+      - repositories-preparation
+    container:
+      image: docker-internal.it.voqa.com/default-compiler:main
+      credentials:
+        username: ${{ secrets.DOCKER_INTERNAL_REGISTRY_USERNAME}}
+        password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
+    env:
+      TARGET_WORKFLOW: "delivery.yml"
+      EVENT_NAME: ${{github.event_name}}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+      
+      - name: Set safe git path
+        run: |
+          repo=$(basename ${{ github.repository }})
+          git config --global --add safe.directory "/__w/${repo}/${repo}"
+
+      - name: Configure conan
+        uses: KUBA-EMB-CI/action-configure-conan@main
+        with:
+          json-secrets: ${{ toJson(secrets) }}
+          conan-context-path: ${CONAN_CONTEXT_PATH}
+
+      - name: Add original repository in configuration
+        run: |
+          from_repository_url=${{ needs.extract-collectors.outputs.from_repository_url }}
+          echo "Add conan authentication for FROM repository ${from_repository_url}"
+          repo_url_target=$(echo "$from_repository_url" | sed -e 's/https:\/\///' -e 's/\/.*//')
+          secret_username_to_extract=REPOSITORY_USERNAME_$(echo "$repo_url_target" | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')
+          echo "Extracting github secret ${secret_username_to_extract}"
+          all_secrets='${{ tojson(secrets) }}'
+          echo "all secrest $all_secrets"
+          secret_username=$(echo $all_secrets | jq -r ".${secret_username_to_extract}")
+          echo "secret_username $secret_username"
+          if [ "null" = "${secret_username}" ] || [ -z "${secret_username}" ]; then
+            echo "Secret ${secret_username_to_extract} not found !"
+            echo "Please add secret ${secret_username_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
+            exit 1
+          fi
+          secret_token_to_extract=REPOSITORY_TOKEN_$(echo "$repo_url_target" | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')
+          echo "Extracting github secret ${secret_token_to_extract}"
+          secret_token=$(echo $all_secrets | jq -r ".${secret_token_to_extract}")
+          if [ "null" = "${secret_token}" ] || [ -z "${secret_token}" ]; then
+            echo "Secret ${secret_token_to_extract} not found !"
+            echo "Please add secret ${secret_token_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
+            exit 1
+          fi
+          all_secrets=''
+          ${{ env.CONAN }} remote add "FROM" "${from_repository_url}" --force
+          ${{ env.CONAN }} remote login -p "${secret_token}" "FROM" "${secret_username}"
+
+      - name: Generate dependencies 
+        run: |
+          requires=""
+          sep=""
+          yq -r ".build.collectors[]" ./conan-context.yml > tmp_input
+          while read -r collector ; do 
+            collector=${collector#*/}; 
+            requires="${requires}${sep}--requires=${collector}/[*]"; 
+            sep=" "
+          done < tmp_input;
+          echo "collector requires ${requires}"
+          : # Build depedencies for each profile and transform into pkglist
+          echo "{}" > pkglist.json
+          yq -r ".build.profiles[]" ./conan-context.yml > tmp_input
+          while read -r profile ; do 
+              # shellcheck disable=SC2086
+              conan install ${requires} -pr:h "${profile}" --format=json > graph-${profile}.json
+              # Transform into pkglist
+              # shellcheck disable=SC2086
+              conan list --graph=graph-${profile}.json --format=json > pkglist-${profile}.json 
+              # Merge with global pkglist
+              # shellcheck disable=SC2086
+              conan pkglist merge --list=pkglist-${profile}.json --list=pkglist.json -f json  --out-file pkglist.json
+              # shellcheck disable=SC2086
+              if [ "${{needs.extract-collectors.outputs.deliverable}}" = 'true' ]; then
+                # shellcheck disable=SC2086
+                ${{ env.CONAN }} install ${requires} -pr:h "${profile}" --deployer delivery --deployer-folder=to_apt
+              fi  
+          done < tmp_input;
+          # Keep only bundle package ( i.e dep from cahce present in the "main" remote )
+          conan pkglist find-remote -r ${{ needs.extract-collectors.outputs.conan_release_remote_name }} -f json  pkglist.json > finalpkglist.json
+          # download them
+          conan remove -c '*'
+          conan download -f json --list finalpkglist.json -r "${{ needs.extract-collectors.outputs.conan_release_remote_name }}" > downloaded.json
+          conan_release_repository_url="${{ needs.extract-collectors.outputs.conan_release_remote_url }}"
+          repository_url_base=$(echo "${conan_release_repository_url}" | cut -d'/' -f1-3)
+          conan_release_repository_name="${{ needs.extract-collectors.outputs.conan_release_repository_name }}"
+          echo "Deleting repository ${conan_release_repository_name}"
+          curl --fail --header "Content-Type: application/json" -X GET \
+              -u "_3DytJ1m:Bgv_mVPZekBGb10FrCfsv1Tn1q7CRQjFiINLIQFSBrS8" \
+              "${repository_url_base}/service/rest/v1/components/?repository=${conan_release_repository_name}" -o components.json
+          for comp in $(jq -cr '.items[].id' components.json); do 
+              echo "deleting components id $comp"; 
+              curl --fail --header "Content-Type: application/json" -X DELETE \
+                -u "_3DytJ1m:Bgv_mVPZekBGb10FrCfsv1Tn1q7CRQjFiINLIQFSBrS8" \
+                "${repository_url_base}/service/rest/v1/components/${comp}"  
+          done
+          conan upload -f json --list downloaded.json -r "${{ needs.extract-collectors.outputs.conan_release_remote_name }}"
+
+      - name: Recreate apt repository exists
+        if: needs.extract-collectors.outputs.deliverable == 'true'
+        run: |
+            curl --fail --header "Content-Type: application/json" -X DELETE \
+              -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
+              "${NEXUS_URL}/service/rest/v1/repositories/${APT_REPO_NAME}"   
+            
+            response=$(curl -s -o output.json -w "%{http_code}\n" --header 'Content-Type: application/json' \
+                        -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
+                        "${NEXUS_URL}/service/rest/v1/repositories/${APT_REPO_NAME}")
+            if [ "${response}" = "200" ]; then
+              echo "Repository ${APT_REPO_NAME} already exists. Skipping creation...."
+            elif [ "${response}" = "404" ]; then
+              echo "Repository ${APT_REPO_NAME} does not exist. Creating it..."
+              echo "${{secrets.APT_GPG_KEY_BASE64}}" > gpg_key_base64.txt
+              base64 -d gpg_key_base64.txt > gpg_key.pem
+              # To change new line into litteral '\n'  for json
+              key=$(awk '{printf "%s\\n", $0}' < gpg_key.pem)
+              rm -f gpg_key_base64.txt gpg_key.pem
+              # Create the nexus repository
+              curl --fail --header "Content-Type: application/json" \
+                -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
+                "${NEXUS_URL}/service/rest/v1/repositories/apt/hosted/" \
+                -d "{  \"name\": \"${APT_REPO_NAME}\", \"online\": true, \"storage\": {\"blobStoreName\": \"${NEXUS_APT_REPO_BLOBSTORE}\",\"strictContentTypeValidation\": true,\"writePolicy\": \"${APT_REPO_WRITE_POLICY}\"}, \
+                \"apt\": {\"distribution\": \"${NEXUS_APT_DISTRIBUTION_NAME}\"}, \"aptSigning\": { \"keypair\": \"${key}\",\"passphrase\": \"${{ secrets.APT_GPG_PASSPHRASE }}\"}}"
+            else
+              echo "Repository ${APT_REPO_NAME} cannot be found. But error is not 404."
+              echo "Http error: ${response}"
+              echo "Response output:"
+              cat output.json
+              exit 1
+            fi
+
+      - name: Upload apt delivery
+        if: needs.extract-collectors.outputs.deliverable == 'true'
+        run: |
+            for deb in ./to_apt/*.deb; do 
+              [ -f "$deb" ] || continue
+              echo "uploading ${deb}"
+              curl --fail -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
+                -H "Content-Type: multipart/form-data" --data-binary \
+                "@${deb}" "${NEXUS_URL}/repository/${{ needs.repositories-preparation.outputs.apt-repo-name }}/" 
+            done 
+
+
+ 

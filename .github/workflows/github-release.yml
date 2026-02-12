@@ -30,10 +30,11 @@ jobs:
           github_changelog_generator -u "${GITHUB_REPOSITORY_OWNER}" -p "${GITHUB_REPOSITORY#"$GITHUB_REPOSITORY_OWNER"/}" -t ${{ github.token }} --output CHANGELOG.md --no-unreleased --pr-label="" --no-issues
 
       - name: Add CHANGELOG.md to artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: changelog-full
           path: CHANGELOG*.md
+          retention-days: 2
 
   create-github-release:
     runs-on: ubuntu-latest
