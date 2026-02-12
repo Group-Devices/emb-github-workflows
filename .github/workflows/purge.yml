@@ -1,7 +1,6 @@
 name: "Purge"
 
 on:
-  workflow_dispatch:
   workflow_call:
             
 env:
