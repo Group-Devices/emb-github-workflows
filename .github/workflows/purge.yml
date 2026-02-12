@@ -321,7 +321,7 @@ jobs:
               # shellcheck disable=SC2086
               if [ "${{needs.extract-collectors.outputs.deliverable}}" = 'true' ]; then
                 # shellcheck disable=SC2086
-                ${{ env.CONAN }} install ${requires} -pr:h "${{ matrix.profile }}" --deployer delivery --deployer-folder=to_apt
+                ${{ env.CONAN }} install ${requires} -pr:h "${profile}" --deployer delivery --deployer-folder=to_apt
               fi  
           done < tmp_input;
           conan download -f json --list pkglist.json -r "${{ needs.extract-collectors.outputs.conan_release_remote_name }}"
