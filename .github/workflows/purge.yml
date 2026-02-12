@@ -312,7 +312,7 @@ jobs:
           yq -r ".build.profiles[]" ./conan-context.yml > tmp_input
           while read -r profile ; do 
               # shellcheck disable=SC2086
-              conan install ${requires} -pr:h "${profile} --format=json > graph-${profile}.json"
+              conan install ${requires} -pr:h "${profile}" --format=json > graph-${profile}.json
               # Transform into pkglist
               # shellcheck disable=SC2086
               conan list --graph=graph-${profile}.json --format=json > pkglist-${profile}.json 
@@ -325,34 +325,25 @@ jobs:
                 ${{ env.CONAN }} install ${requires} -pr:h "${profile}" --deployer delivery --deployer-folder=to_apt
               fi  
           done < tmp_input;
-          conan download -f json --list pkglist.json -r "${{ needs.extract-collectors.outputs.conan_release_remote_name }}"
-
-          : # Recreate repository
-          curl --fail --header "Content-Type: application/json" -X DELETE \
-              -u "${{ env.RELEASE_REGISTRY_USERNAME }}:${{ env.RELEASE_REGISTRY_TOKEN }}" \
-              "${repository_url_base}/service/rest/v1/repositories/${conan_release_repository_name}"         
+          # Keep only bundle package ( i.e dep from cahce present in the "main" remote )
+          conan pkglist find-remote -r ${{ needs.extract-collectors.outputs.conan_release_remote_name }} -f json  pkglist.json > finalpkglist.json
+          # download them
+          conan remove -c '*'
+          conan download -f json --list finalpkglist.json -r "${{ needs.extract-collectors.outputs.conan_release_remote_name }}" > downloaded.json
           conan_release_repository_url="${{ needs.extract-collectors.outputs.conan_release_remote_url }}"
           repository_url_base=$(echo "${conan_release_repository_url}" | cut -d'/' -f1-3)
           conan_release_repository_name="${{ needs.extract-collectors.outputs.conan_release_repository_name }}"
-          response=$(curl -s -o output.json -w "%{http_code}\n" --header 'Content-Type: application/json' \
-                      -u "${{ env.RELEASE_REGISTRY_USERNAME }}:${{ env.RELEASE_REGISTRY_TOKEN }}" \
-                      "${repository_url_base}/service/rest/v1/repositories/${conan_release_repository_name}")
-          if [ "${response}" = "200" ]; then
-            echo "Repository ${conan_release_repository_name} already exists. Skipping creation...."
-          elif [ "${response}" = "404" ]; then
-            echo "Repository ${conan_release_repository_name} does not exist. Creating it..."
-            curl --fail --header "Content-Type: application/json" \
-              -u "${{ env.RELEASE_REGISTRY_USERNAME }}:${{ env.RELEASE_REGISTRY_TOKEN }}" \
-              "${repository_url_base}/service/rest/v1/repositories/conan/hosted/" \
-              -d "{  \"name\": \"${conan_release_repository_name}\", \"online\": true, \"storage\": {\"blobStoreName\": \"${NEXUS_CONAN_REPO_BLOBSTORE}\",\"strictContentTypeValidation\": true,\"writePolicy\": \"allow\"}}"
-          else
-            echo "Repository ${conan_release_repository_name} cannot be found. But error is not 404."
-            echo "Http error: ${response}"
-            echo "Response output:"
-            cat output.json
-            exit 1
-          fi
-          conan upload -f json --list pkglist.json -r "${{ needs.extract-collectors.outputs.conan_release_remote_name }}"
+          echo "Deleting repository ${conan_release_repository_name}"
+          curl --fail --header "Content-Type: application/json" -X GET \
+              -u "_3DytJ1m:Bgv_mVPZekBGb10FrCfsv1Tn1q7CRQjFiINLIQFSBrS8" \
+              "${repository_url_base}/service/rest/v1/components/?repository=${conan_release_repository_name}" -o components.json
+          for comp in $(jq -cr '.items[].id' components.json); do 
+              echo "deleting components id $comp"; 
+              curl --fail --header "Content-Type: application/json" -X DELETE \
+                -u "_3DytJ1m:Bgv_mVPZekBGb10FrCfsv1Tn1q7CRQjFiINLIQFSBrS8" \
+                "${repository_url_base}/service/rest/v1/components/${comp}"  
+          done
+          conan upload -f json --list downloaded.json -r "${{ needs.extract-collectors.outputs.conan_release_remote_name }}"
 
       - name: Recreate apt repository exists
         if: needs.extract-collectors.outputs.deliverable == 'true'
