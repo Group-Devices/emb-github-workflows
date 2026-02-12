@@ -310,10 +310,13 @@ jobs:
           echo "{}" > pkglist.json
           yq -r ".build.profiles[]" ./conan-context.yml > tmp_input
           while read -r profile ; do 
+              # shellcheck disable=SC2086
               conan install ${requires} -pr:h "${profile} --format=json > graph-${profile}.json"
               # Transform into pkglist
+              # shellcheck disable=SC2086
               conan list --graph=graph-${profile}.json --format=json > pkglist-${profile}.json 
               # Merge with global pkglist
+              # shellcheck disable=SC2086
               conan pkglist merge --list=pkglist-${profile}.json --list=pkglist.json -f json  --out-file pkglist.json
               # shellcheck disable=SC2086
               if [ "${{needs.extract-collectors.outputs.deliverable}}" = 'true' ]; then
