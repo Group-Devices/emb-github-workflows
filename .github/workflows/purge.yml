@@ -2,6 +2,7 @@ name: "Purge"
 
 on:
   workflow_dispatch:
+  workflow_call:
             
 env:
   CONAN_CONTEXT_PATH: conan-context.yml
