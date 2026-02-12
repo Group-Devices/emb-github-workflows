@@ -244,7 +244,7 @@ jobs:
       - extract-collectors
       - repositories-preparation
     container:
-      image: docker-internal.it.voqa.com/${{ matrix.profile }}-compiler:main
+      image: docker-internal.it.voqa.com/default-compiler:main
       credentials:
         username: ${{ secrets.DOCKER_INTERNAL_REGISTRY_USERNAME}}
         password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
@@ -295,7 +295,7 @@ jobs:
           ${{ env.CONAN }} remote add "FROM" "${from_repository_url}" --force
           ${{ env.CONAN }} remote login -p "${secret_token}" "FROM" "${secret_username}"
 
-      - name: Generate dependencies for arch ${{ matrix.profile }}
+      - name: Generate dependencies 
         run: |
           requires=""
           sep=""
@@ -306,7 +306,6 @@ jobs:
             sep=" "
           done < tmp_input;
           echo "collector requires ${requires}"
-          ${{ env.CONAN }} remote disable "${{ needs.extract-collectors.outputs.conan_release_remote_name}}" 
           : # Build depedencies for each profile and transform into pkglist
           echo "{}" > pkglist.json
           yq -r ".build.profiles[]" ./conan-context.yml > tmp_input
@@ -322,11 +321,9 @@ jobs:
                 ${{ env.CONAN }} install ${requires} -pr:h "${{ matrix.profile }}" --deployer delivery --deployer-folder=to_apt
               fi  
           done < tmp_input;
+          conan download -f json --list pkglist.json -r "${{ needs.extract-collectors.outputs.conan_release_remote_name }}"
 
-          ${{ env.CONAN }} remote enable "${{ needs.extract-collectors.outputs.conan_release_remote_name}}" 
-
-      - name: Delete and recreate conan repository exists
-        run: |
+          : # Recreate repository
           curl --fail --header "Content-Type: application/json" -X DELETE \
               -u "${{ env.RELEASE_REGISTRY_USERNAME }}:${{ env.RELEASE_REGISTRY_TOKEN }}" \
               "${repository_url_base}/service/rest/v1/repositories/${conan_release_repository_name}"         
@@ -351,52 +348,7 @@ jobs:
             cat output.json
             exit 1
           fi
-
-      - name: Upload to conan
-        id: upload
-        run: |
-          DELIVERY_NAME=${{ needs.preflight-checks.outputs.delivery-name }}
-          echo "Start upload release packages"
-          jq -c '.[] ' ./to_conan/packages.json | while read -r repository ; do \
-            package=$(echo "$repository" | jq -r .name)
-            version=$(echo "$repository" | jq -r .version)
-            sha=$(echo "$repository" | jq -r .sha)
-            url=$(echo "$repository" | jq -r .url) 
-            echo "Manage package ${package} with version ${version}"
-            # suppress https://
-            URL_NOPRO=${url#*//}
-            # supreess github.com
-            URL_REL=${URL_NOPRO#*/}
-            # suppress .git if any
-            URL_REL=${URL_REL%.*}
-            OWNER=$(echo "${URL_REL}" | cut -d'/' -f1)
-            echo "Extracting github token secret for org ${OWNER}"
-            OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_RELEASE_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
-            echo "Looking for matching github secret ${OWNER_GIT_TOKEN_SECRET}"
-            # shellcheck disable=SC2086
-            all_secrets='${{ tojson(secrets) }}'
-            OWNER_GIT_TOKEN=$(echo "$all_secrets" | jq -r ".${OWNER_GIT_TOKEN_SECRET}")
-            all_secrets=''
-            if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
-              echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
-              echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
-              exit 1
-            else
-              echo "Found secret ${OWNER_GIT_TOKEN_SECRET}"
-            fi
-            echo "${OWNER_GIT_TOKEN}" > mytoken.txt
-            gh auth login --with-token < mytoken.txt
-            rm mytoken.txt
-
-            : # ---------- UPLOAD ARTEFACT TO CONAN REPOSITORY -----------
-            : # Upload recipe and binary package to conan repository
-            : # conan download is needed to also get exports_sources
-            echo "Download package ${package} with version ${version}"
-            ${{ env.CONAN }} download -r FROM "$package/$version"
-            echo "Upload package ${package} with version ${version} to ${{ needs.extract-collectors.outputs.conan_release_remote_name }}"
-            ${{ env.CONAN }} upload -r "${{ needs.extract-collectors.outputs.conan_release_remote_name }}" "$package/$version" 
-
-          done
+          conan upload -f json --list pkglist.json -r "${{ needs.extract-collectors.outputs.conan_release_remote_name }}"
 
       - name: Recreate apt repository exists
         if: needs.extract-collectors.outputs.deliverable == 'true'
