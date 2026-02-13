@@ -357,35 +357,25 @@ jobs:
       - name: Recreate apt repository exists
         if: needs.extract-collectors.outputs.deliverable == 'true'
         run: |
-            curl --fail --header "Content-Type: application/json" -X DELETE \
-              -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
-              "${NEXUS_URL}/service/rest/v1/repositories/${APT_REPO_NAME}"   
-            
-            response=$(curl -s -o output.json -w "%{http_code}\n" --header 'Content-Type: application/json' \
-                        -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
-                        "${NEXUS_URL}/service/rest/v1/repositories/${APT_REPO_NAME}")
-            if [ "${response}" = "200" ]; then
-              echo "Repository ${APT_REPO_NAME} already exists. Skipping creation...."
-            elif [ "${response}" = "404" ]; then
-              echo "Repository ${APT_REPO_NAME} does not exist. Creating it..."
-              echo "${{secrets.APT_GPG_KEY_BASE64}}" > gpg_key_base64.txt
-              base64 -d gpg_key_base64.txt > gpg_key.pem
-              # To change new line into litteral '\n'  for json
-              key=$(awk '{printf "%s\\n", $0}' < gpg_key.pem)
-              rm -f gpg_key_base64.txt gpg_key.pem
-              # Create the nexus repository
-              curl --fail --header "Content-Type: application/json" \
-                -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
-                "${NEXUS_URL}/service/rest/v1/repositories/apt/hosted/" \
-                -d "{  \"name\": \"${APT_REPO_NAME}\", \"online\": true, \"storage\": {\"blobStoreName\": \"${NEXUS_APT_REPO_BLOBSTORE}\",\"strictContentTypeValidation\": true,\"writePolicy\": \"${APT_REPO_WRITE_POLICY}\"}, \
-                \"apt\": {\"distribution\": \"${NEXUS_APT_DISTRIBUTION_NAME}\"}, \"aptSigning\": { \"keypair\": \"${key}\",\"passphrase\": \"${{ secrets.APT_GPG_PASSPHRASE }}\"}}"
-            else
-              echo "Repository ${APT_REPO_NAME} cannot be found. But error is not 404."
-              echo "Http error: ${response}"
-              echo "Response output:"
-              cat output.json
-              exit 1
+          continuation="first"
+          continuationToken=""
+          while [ "${continuation}" != null ]
+          do
+            curl --silent  --fail --header "Content-Type: application/json" -X GET \
+                  -u "_3DytJ1m:Bgv_mVPZekBGb10FrCfsv1Tn1q7CRQjFiINLIQFSBrS8" \
+                  "${repository_url_base}/service/rest/v1/components/?repository=${{ needs.repositories-preparation.outputs.apt-repo-name }}${continuationToken}" -o components.json
+            continuation=$(jq -r '.continuationToken' components.json)
+            if [  "${continuation}" != null ]; then
+                echo "Continuing..."
+                continuationToken="&continuationToken=${continuation}"
             fi
+            for comp in $(jq -cr '.items[].id' components.json); do 
+              echo "deleting apt components id $comp"; 
+              curl --silent --fail --header "Content-Type: application/json" -X DELETE \
+                -u "_3DytJ1m:Bgv_mVPZekBGb10FrCfsv1Tn1q7CRQjFiINLIQFSBrS8" \
+                "${repository_url_base}/service/rest/v1/components/${comp}"  
+            done
+          done 
 
       - name: Upload apt delivery
         if: needs.extract-collectors.outputs.deliverable == 'true'
