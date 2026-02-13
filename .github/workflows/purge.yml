@@ -341,14 +341,13 @@ jobs:
                   -u "_3DytJ1m:Bgv_mVPZekBGb10FrCfsv1Tn1q7CRQjFiINLIQFSBrS8" \
                   "${repository_url_base}/service/rest/v1/components/?repository=${conan_release_repository_name}${continuationToken}" -o components.json
             continuation=$(jq -r '.continuationToken' components.json)
-            echo "continuation ${continuation}"
             if [  "${continuation}" != null ]; then
-                echo "Need to  continue"
+                echo "Continuing..."
                 continuationToken="&continuationToken=${continuation}"
             fi
             for comp in $(jq -cr '.items[].id' components.json); do 
               echo "deleting components id $comp"; 
-              curl --fail --header "Content-Type: application/json" -X DELETE \
+              curl --silent --fail --header "Content-Type: application/json" -X DELETE \
                 -u "_3DytJ1m:Bgv_mVPZekBGb10FrCfsv1Tn1q7CRQjFiINLIQFSBrS8" \
                 "${repository_url_base}/service/rest/v1/components/${comp}"  
             done
