@@ -357,6 +357,8 @@ jobs:
       - name: Recreate apt repository exists
         if: needs.extract-collectors.outputs.deliverable == 'true'
         run: |
+          conan_release_repository_url="${{ needs.extract-collectors.outputs.conan_release_remote_url }}"
+          repository_url_base=$(echo "${conan_release_repository_url}" | cut -d'/' -f1-3)
           continuation="first"
           continuationToken=""
           while [ "${continuation}" != null ]
