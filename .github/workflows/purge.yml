@@ -338,7 +338,7 @@ jobs:
           while [ "${continuation}" != null ]
           do
             curl --silent  --fail --header "Content-Type: application/json" -X GET \
-                  -u "_3DytJ1m:Bgv_mVPZekBGb10FrCfsv1Tn1q7CRQjFiINLIQFSBrS8" \
+                  -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
                   "${repository_url_base}/service/rest/v1/components/?repository=${conan_release_repository_name}${continuationToken}" -o components.json
             continuation=$(jq -r '.continuationToken' components.json)
             if [  "${continuation}" != null ]; then
@@ -348,7 +348,7 @@ jobs:
             for comp in $(jq -cr '.items[].id' components.json); do 
               echo "deleting components id $comp"; 
               curl --silent --fail --header "Content-Type: application/json" -X DELETE \
-                -u "_3DytJ1m:Bgv_mVPZekBGb10FrCfsv1Tn1q7CRQjFiINLIQFSBrS8" \
+                -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
                 "${repository_url_base}/service/rest/v1/components/${comp}"  
             done
           done
@@ -364,7 +364,7 @@ jobs:
           while [ "${continuation}" != null ]
           do
             curl --silent  --fail --header "Content-Type: application/json" -X GET \
-                  -u "_3DytJ1m:Bgv_mVPZekBGb10FrCfsv1Tn1q7CRQjFiINLIQFSBrS8" \
+                  -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
                   "${repository_url_base}/service/rest/v1/components/?repository=${{ needs.repositories-preparation.outputs.apt-repo-name }}${continuationToken}" -o components.json
             continuation=$(jq -r '.continuationToken' components.json)
             if [  "${continuation}" != null ]; then
@@ -374,7 +374,7 @@ jobs:
             for comp in $(jq -cr '.items[].id' components.json); do 
               echo "deleting apt components id $comp"; 
               curl --silent --fail --header "Content-Type: application/json" -X DELETE \
-                -u "_3DytJ1m:Bgv_mVPZekBGb10FrCfsv1Tn1q7CRQjFiINLIQFSBrS8" \
+                -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
                 "${repository_url_base}/service/rest/v1/components/${comp}"  
             done
           done 
