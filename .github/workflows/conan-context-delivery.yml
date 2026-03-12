@@ -247,7 +247,7 @@ jobs:
         if: needs.extract-collectors.outputs.deliverable == 'true'
         run: |
             response=$(curl -s -o output.json -w "%{http_code}\n" --header 'Content-Type: application/json' \
-                        -u "${{secrets.GROUP_REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.GROUP_REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
+                        -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}" \
                         "${NEXUS_URL}/service/rest/v1/repositories/${APT_REPO_NAME}")
             if [ "${response}" = "200" ]; then
               echo "Repository ${APT_REPO_NAME} already exists. Skipping creation...."
@@ -260,7 +260,7 @@ jobs:
               rm -f gpg_key_base64.txt gpg_key.pem
               # Create the nexus repository
               curl --fail --header "Content-Type: application/json" \
-                -u "${{secrets.GROUP_REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.GROUP_REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
+                -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}" \
                 "${NEXUS_URL}/service/rest/v1/repositories/apt/hosted/" \
                 -d "{  \"name\": \"${APT_REPO_NAME}\", \"online\": true, \"storage\": {\"blobStoreName\": \"${NEXUS_APT_REPO_BLOBSTORE}\",\"strictContentTypeValidation\": true,\"writePolicy\": \"${APT_REPO_WRITE_POLICY}\"}, \
                 \"apt\": {\"distribution\": \"${NEXUS_APT_DISTRIBUTION_NAME}\"}, \"aptSigning\": { \"keypair\": \"${key}\",\"passphrase\": \"${{ secrets.APT_GPG_PASSPHRASE }}\"}}"
@@ -550,7 +550,7 @@ jobs:
             for deb in ./to_apt/*.deb; do
               [ -f "$deb" ] || continue
               echo "uploading ${deb}"
-              curl --fail -u "${{secrets.GROUP_REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.GROUP_REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
+              curl --fail -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}" \
                 -H "Content-Type: multipart/form-data" --data-binary \
                 "@${deb}" "${NEXUS_URL}/repository/${{ needs.repositories-preparation.outputs.apt-repo-name }}/"
             done
