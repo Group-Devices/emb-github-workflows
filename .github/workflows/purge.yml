@@ -338,7 +338,7 @@ jobs:
           while [ "${continuation}" != null ]
           do
             curl --silent  --fail --header "Content-Type: application/json" -X GET \
-                  -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}" \
+                  -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.GROUP_REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
                   "${repository_url_base}/service/rest/v1/components/?repository=${conan_release_repository_name}${continuationToken}" -o components.json
             continuation=$(jq -r '.continuationToken' components.json)
             if [  "${continuation}" != null ]; then
@@ -348,7 +348,7 @@ jobs:
             for comp in $(jq -cr '.items[].id' components.json); do
               echo "deleting components id $comp";
               curl --silent --fail --header "Content-Type: application/json" -X DELETE \
-                -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}" \
+                -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.GROUP_REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
                 "${repository_url_base}/service/rest/v1/components/${comp}"
             done
           done
@@ -364,7 +364,7 @@ jobs:
           while [ "${continuation}" != null ]
           do
             curl --silent  --fail --header "Content-Type: application/json" -X GET \
-                  -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}" \
+                  -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.GROUP_REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
                   "${repository_url_base}/service/rest/v1/components/?repository=${{ needs.repositories-preparation.outputs.apt-repo-name }}${continuationToken}" -o components.json
             continuation=$(jq -r '.continuationToken' components.json)
             if [  "${continuation}" != null ]; then
@@ -374,7 +374,7 @@ jobs:
             for comp in $(jq -cr '.items[].id' components.json); do
               echo "deleting apt components id $comp";
               curl --silent --fail --header "Content-Type: application/json" -X DELETE \
-                -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}" \
+                -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.GROUP_REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
                 "${repository_url_base}/service/rest/v1/components/${comp}"
             done
           done
@@ -385,7 +385,7 @@ jobs:
             for deb in ./to_apt/*.deb; do
               [ -f "$deb" ] || continue
               echo "uploading ${deb}"
-              curl --fail -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}" \
+              curl --fail -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.GROUP_REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
                 -H "Content-Type: multipart/form-data" --data-binary \
                 "@${deb}" "${NEXUS_URL}/repository/${{ needs.repositories-preparation.outputs.apt-repo-name }}/"
             done
