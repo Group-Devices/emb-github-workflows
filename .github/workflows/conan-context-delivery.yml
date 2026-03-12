@@ -260,7 +260,7 @@ jobs:
               key=$(awk '{printf "%s\\n", $0}' < gpg_key.pem)
               rm -f gpg_key_base64.txt gpg_key.pem
               # Create the nexus repository
-              echo "repo: $APT_REPO_NAME store: $NEXUS_APT_REPO_BLOBSTORE policy: APT_REPO_WRITE_POLICY distri: $NEXUS_APT_DISTRIBUTION_NAME"
+              echo "repo: $APT_REPO_NAME store: $NEXUS_APT_REPO_BLOBSTORE policy: $APT_REPO_WRITE_POLICY distri: $NEXUS_APT_DISTRIBUTION_NAME"
               curl --fail --header "Content-Type: application/json" \
                 -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}" \
                 "${NEXUS_URL}/service/rest/v1/repositories/apt/hosted/" \
