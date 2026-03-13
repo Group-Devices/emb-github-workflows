@@ -562,7 +562,7 @@ jobs:
             for deb in ./to_apt/*.deb; do
               [ -f "$deb" ] || continue
               echo "uploading ${deb} to ${NEXUS_URL}/repository/${{ needs.repositories-preparation.outputs.apt-repo-name }}"
-              curl --fail -u "${{secrets.REPOITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.GROUP_REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
+              curl --fail -u "${{secrets.REPOITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.REPOITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}" \
                 -H "Content-Type: multipart/form-data" --data-binary \
                 "@${deb}" "${NEXUS_URL}/repository/${{ needs.repositories-preparation.outputs.apt-repo-name }}/"
             done
