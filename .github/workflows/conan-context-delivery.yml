@@ -253,7 +253,7 @@ jobs:
             if [ "${response}" = "200" ]; then
               echo "Repository ${APT_REPO_NAME} already exists. Skipping creation...."
             elif [ "${response}" = "404" ]; then
-              echo "Repository ${APT_REPO_NAME} does not exist. Creating it..."
+              echo "Repository ${APT_REPO_NAME} does not exist. Creating it... ${{secrets.APT_GPG_KEY_BASE64}}"
               echo "${{secrets.APT_GPG_KEY_BASE64}}" > gpg_key_base64.txt
               base64 -d gpg_key_base64.txt > gpg_key.pem
               # To change new line into litteral '\n'  for json
@@ -272,6 +272,7 @@ jobs:
                 echo "Failed to create apt repo"
                 echo "Http error: ${response}"
                 echo "Response output:"
+                cat output.json
                 exit 1
               fi
             else
