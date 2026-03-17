@@ -336,7 +336,9 @@ jobs:
       - name: Extract authentication token
         run: |
           context=$(yq e '.bundle' "${CONAN_CONTEXT_PATH}")
+          echo "Context: ${context}"
           OWNER=$(echo "${context}" | cut -d'/' -f1)
+          echo "Owner: ${OWNER}"
           OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
           # shellcheck disable=SC2086
           all_secrets='${{ tojson(secrets) }}'
