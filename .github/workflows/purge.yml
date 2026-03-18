@@ -2,12 +2,12 @@ name: "Purge"
 
 on:
   workflow_call:
-            
+
 env:
   CONAN_CONTEXT_PATH: conan-context.yml
   CONAN: "conan"   # echo conan for a dry run
-  NEXUS_URL: "https://repository.it.voqa.com"
-  NEXUS_APT_REPO_BLOBSTORE: "nexus-bs-voqa-prd-apt"
+  NEXUS_URL: "https://repository.nexus.vixtechnology.com"
+  NEXUS_APT_REPO_BLOBSTORE: "nexus-bs-prd-apt"
   NEXUS_CONAN_REPO_BLOBSTORE: "nexus-bs-voqa-prd-conan"
 
 jobs:
@@ -102,7 +102,7 @@ jobs:
             echo "File: ${CONAN_CONTEXT_PATH} - Field '$FIELD' does not exist or is not an array."
             exit 1
           fi
-  
+
       - name: 'Extract the build profiles list'
         id: generate-build-profiles-list
         shell: bash
@@ -119,20 +119,20 @@ jobs:
             echo "File: ${CONAN_CONTEXT_PATH} - Field '$FIELD' does not exist or is not an array."
             exit 1
           fi
-          
-      - name: 'Extract deliverable status of the bundle' 
+
+      - name: 'Extract deliverable status of the bundle'
         id: generate-delivery
-        run: | 
+        run: |
           product_name=$(yq -r ".productName" "${CONAN_CONTEXT_PATH}")
           if [ "null" = "${product_name}" ] || [ -z "${product_name}" ]; then
             deliverable="false"
           else
             deliverable="true"
-          fi  
-          echo "!!!! deliverable=$deliverable / product_name=$product_name !!!!!!" 
-          echo "deliverable=$deliverable" >> "$GITHUB_OUTPUT"   
+          fi
+          echo "!!!! deliverable=$deliverable / product_name=$product_name !!!!!!"
+          echo "deliverable=$deliverable" >> "$GITHUB_OUTPUT"
           echo "product_name=$product_name" >> "$GITHUB_OUTPUT"
-          
+
       - name: Extract release info
         id: generate-release-info
         shell: bash
@@ -156,7 +156,7 @@ jobs:
           else
             echo "Will use upload repository url: ${upload_repository_url}"
             echo "Will use from repository url: ${from_repository_url}"
-          fi     
+          fi
           echo "from_repository_url=$from_repository_url" >> "$GITHUB_OUTPUT"
 
   repositories-preparation:
@@ -174,10 +174,10 @@ jobs:
           conan_release_remote_url="${{ needs.extract-collectors.outputs.conan_release_remote_url }}"
           repository_hostname=$(echo "${conan_release_remote_url}" | cut -d'/' -f3 | cut -d':' -f1)
           echo "Extracting github token secret for repository ${repository_hostname}"
-          
+
           # shellcheck disable=SC2086
           all_secrets='${{ tojson(secrets) }}'
-          
+
           RELEASE_REGISTRY_USERNAME_SECRET=REPOSITORY_USERNAME_$(echo "${repository_hostname}" | tr '[:lower:]' '[:upper:]' | tr '-' '_' | tr '.' '_')
           echo "Looking for matching github secret ${RELEASE_REGISTRY_USERNAME_SECRET}"
           RELEASE_REGISTRY_USERNAME=$(echo "$all_secrets" | jq -r ".${RELEASE_REGISTRY_USERNAME_SECRET}")
@@ -188,7 +188,7 @@ jobs:
           else
             echo "Found secret ${RELEASE_REGISTRY_USERNAME_SECRET}"
           fi
-          
+
           RELEASE_REGISTRY_TOKEN_SECRET=REPOSITORY_TOKEN_$(echo "${repository_hostname}" | tr '[:lower:]' '[:upper:]' | tr '-' '_' | tr '.' '_')
           echo "Looking for matching github secret ${RELEASE_REGISTRY_TOKEN_SECRET}"
           RELEASE_REGISTRY_TOKEN=$(echo "$all_secrets" | jq -r ".${RELEASE_REGISTRY_TOKEN_SECRET}")
@@ -200,7 +200,7 @@ jobs:
           else
             echo "Found secret ${RELEASE_REGISTRY_TOKEN_SECRET}"
           fi
-          
+
           echo "RELEASE_REGISTRY_USERNAME=${RELEASE_REGISTRY_USERNAME}" >> "$GITHUB_ENV"
           echo "RELEASE_REGISTRY_TOKEN=${RELEASE_REGISTRY_TOKEN}" >> "$GITHUB_ENV"
 
@@ -227,7 +227,7 @@ jobs:
               echo "Not able to determine which repository to use for github ref type ${GITHUB_REF_TYPE} and github ref name ${GITHUB_REF_NAME}"
               exit 1
             fi
-            echo "Repository \"${APT_REPO_NAME}\" will be created with write policy \"${APT_REPO_WRITE_POLICY}\"" 
+            echo "Repository \"${APT_REPO_NAME}\" will be created with write policy \"${APT_REPO_WRITE_POLICY}\""
             echo "APT_REPO_NAME=${APT_REPO_NAME}" >> "$GITHUB_ENV"
             echo "APT_REPO_WRITE_POLICY=${APT_REPO_WRITE_POLICY}" >> "$GITHUB_ENV"
             echo "apt-repo-name=${APT_REPO_NAME}" >> "$GITHUB_OUTPUT"
@@ -255,7 +255,7 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
-      
+
       - name: Set safe git path
         run: |
           repo=$(basename ${{ github.repository }})
@@ -295,26 +295,26 @@ jobs:
           ${{ env.CONAN }} remote add "FROM" "${from_repository_url}" --force
           ${{ env.CONAN }} remote login -p "${secret_token}" "FROM" "${secret_username}"
 
-      - name: Generate dependencies 
+      - name: Generate dependencies
         run: |
           requires=""
           sep=""
           yq -r ".build.collectors[]" ./conan-context.yml > tmp_input
-          while read -r collector ; do 
-            collector=${collector#*/}; 
-            requires="${requires}${sep}--requires=${collector}/[*]"; 
+          while read -r collector ; do
+            collector=${collector#*/};
+            requires="${requires}${sep}--requires=${collector}/[*]";
             sep=" "
           done < tmp_input;
           echo "collector requires ${requires}"
           : # Build depedencies for each profile and transform into pkglist
           echo "{}" > pkglist.json
           yq -r ".build.profiles[]" ./conan-context.yml > tmp_input
-          while read -r profile ; do 
+          while read -r profile ; do
               # shellcheck disable=SC2086
               conan install ${requires} -pr:h "${profile}" --format=json > graph-${profile}.json
               # Transform into pkglist
               # shellcheck disable=SC2086
-              conan list --graph=graph-${profile}.json --format=json > pkglist-${profile}.json 
+              conan list --graph=graph-${profile}.json --format=json > pkglist-${profile}.json
               # Merge with global pkglist
               # shellcheck disable=SC2086
               conan pkglist merge --list=pkglist-${profile}.json --list=pkglist.json -f json  --out-file pkglist.json
@@ -322,7 +322,7 @@ jobs:
               if [ "${{needs.extract-collectors.outputs.deliverable}}" = 'true' ]; then
                 # shellcheck disable=SC2086
                 ${{ env.CONAN }} install ${requires} -pr:h "${profile}" --deployer delivery --deployer-folder=to_apt
-              fi  
+              fi
           done < tmp_input;
           # Keep only bundle package ( i.e dep from cahce present in the "main" remote )
           conan pkglist find-remote -r ${{ needs.extract-collectors.outputs.conan_release_remote_name }} -f json  pkglist.json > finalpkglist.json
@@ -333,60 +333,62 @@ jobs:
           repository_url_base=$(echo "${conan_release_repository_url}" | cut -d'/' -f1-3)
           conan_release_repository_name="${{ needs.extract-collectors.outputs.conan_release_repository_name }}"
           echo "Deleting repository ${conan_release_repository_name}"
-          curl --fail --header "Content-Type: application/json" -X GET \
-              -u "_3DytJ1m:Bgv_mVPZekBGb10FrCfsv1Tn1q7CRQjFiINLIQFSBrS8" \
-              "${repository_url_base}/service/rest/v1/components/?repository=${conan_release_repository_name}" -o components.json
-          for comp in $(jq -cr '.items[].id' components.json); do 
-              echo "deleting components id $comp"; 
-              curl --fail --header "Content-Type: application/json" -X DELETE \
-                -u "_3DytJ1m:Bgv_mVPZekBGb10FrCfsv1Tn1q7CRQjFiINLIQFSBrS8" \
-                "${repository_url_base}/service/rest/v1/components/${comp}"  
+          continuation="first"
+          continuationToken=""
+          while [ "${continuation}" != null ]
+          do
+            curl --silent  --fail --header "Content-Type: application/json" -X GET \
+                  -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.GROUP_REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
+                  "${repository_url_base}/service/rest/v1/components/?repository=${conan_release_repository_name}${continuationToken}" -o components.json
+            continuation=$(jq -r '.continuationToken' components.json)
+            if [  "${continuation}" != null ]; then
+                echo "Continuing..."
+                continuationToken="&continuationToken=${continuation}"
+            fi
+            for comp in $(jq -cr '.items[].id' components.json); do
+              echo "deleting components id $comp";
+              curl --silent --fail --header "Content-Type: application/json" -X DELETE \
+                -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.GROUP_REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
+                "${repository_url_base}/service/rest/v1/components/${comp}"
+            done
           done
           conan upload -f json --list downloaded.json -r "${{ needs.extract-collectors.outputs.conan_release_remote_name }}"
 
       - name: Recreate apt repository exists
         if: needs.extract-collectors.outputs.deliverable == 'true'
         run: |
-            curl --fail --header "Content-Type: application/json" -X DELETE \
-              -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
-              "${NEXUS_URL}/service/rest/v1/repositories/${APT_REPO_NAME}"   
-            
-            response=$(curl -s -o output.json -w "%{http_code}\n" --header 'Content-Type: application/json' \
-                        -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
-                        "${NEXUS_URL}/service/rest/v1/repositories/${APT_REPO_NAME}")
-            if [ "${response}" = "200" ]; then
-              echo "Repository ${APT_REPO_NAME} already exists. Skipping creation...."
-            elif [ "${response}" = "404" ]; then
-              echo "Repository ${APT_REPO_NAME} does not exist. Creating it..."
-              echo "${{secrets.APT_GPG_KEY_BASE64}}" > gpg_key_base64.txt
-              base64 -d gpg_key_base64.txt > gpg_key.pem
-              # To change new line into litteral '\n'  for json
-              key=$(awk '{printf "%s\\n", $0}' < gpg_key.pem)
-              rm -f gpg_key_base64.txt gpg_key.pem
-              # Create the nexus repository
-              curl --fail --header "Content-Type: application/json" \
-                -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
-                "${NEXUS_URL}/service/rest/v1/repositories/apt/hosted/" \
-                -d "{  \"name\": \"${APT_REPO_NAME}\", \"online\": true, \"storage\": {\"blobStoreName\": \"${NEXUS_APT_REPO_BLOBSTORE}\",\"strictContentTypeValidation\": true,\"writePolicy\": \"${APT_REPO_WRITE_POLICY}\"}, \
-                \"apt\": {\"distribution\": \"${NEXUS_APT_DISTRIBUTION_NAME}\"}, \"aptSigning\": { \"keypair\": \"${key}\",\"passphrase\": \"${{ secrets.APT_GPG_PASSPHRASE }}\"}}"
-            else
-              echo "Repository ${APT_REPO_NAME} cannot be found. But error is not 404."
-              echo "Http error: ${response}"
-              echo "Response output:"
-              cat output.json
-              exit 1
+          conan_release_repository_url="${{ needs.extract-collectors.outputs.conan_release_remote_url }}"
+          repository_url_base=$(echo "${conan_release_repository_url}" | cut -d'/' -f1-3)
+          continuation="first"
+          continuationToken=""
+          while [ "${continuation}" != null ]
+          do
+            curl --silent  --fail --header "Content-Type: application/json" -X GET \
+                  -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.GROUP_REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
+                  "${repository_url_base}/service/rest/v1/components/?repository=${{ needs.repositories-preparation.outputs.apt-repo-name }}${continuationToken}" -o components.json
+            continuation=$(jq -r '.continuationToken' components.json)
+            if [  "${continuation}" != null ]; then
+                echo "Continuing..."
+                continuationToken="&continuationToken=${continuation}"
             fi
+            for comp in $(jq -cr '.items[].id' components.json); do
+              echo "deleting apt components id $comp";
+              curl --silent --fail --header "Content-Type: application/json" -X DELETE \
+                -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.GROUP_REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
+                "${repository_url_base}/service/rest/v1/components/${comp}"
+            done
+          done
 
       - name: Upload apt delivery
         if: needs.extract-collectors.outputs.deliverable == 'true'
         run: |
-            for deb in ./to_apt/*.deb; do 
+            for deb in ./to_apt/*.deb; do
               [ -f "$deb" ] || continue
               echo "uploading ${deb}"
-              curl --fail -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_IT_VOQA_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
+              curl --fail -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.GROUP_REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
                 -H "Content-Type: multipart/form-data" --data-binary \
-                "@${deb}" "${NEXUS_URL}/repository/${{ needs.repositories-preparation.outputs.apt-repo-name }}/" 
-            done 
+                "@${deb}" "${NEXUS_URL}/repository/${{ needs.repositories-preparation.outputs.apt-repo-name }}/"
+            done
 
 
- 
+
