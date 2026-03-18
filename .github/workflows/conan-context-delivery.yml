@@ -440,7 +440,7 @@ jobs:
           echo "collector requires ${requires}"
           ${{ env.CONAN }} remote disable "${{ needs.extract-collectors.outputs.conan_release_remote_name}}"
           # shellcheck disable=SC2086
-          ${{ env.CONAN }} install ${requires} -pr:h "${{ matrix.profile }}" --deployer release --deployer-folder=to_conan
+          ${{ env.CONAN }} install ${requires} -pr:h "${{ matrix.profile }}" --deployer release --deployer-folder=to_conan --build=missing
           if [ "${{needs.extract-collectors.outputs.deliverable}}" = 'true' ]; then
             # shellcheck disable=SC2086
             ${{ env.CONAN }} install ${requires} -pr:h "${{ matrix.profile }}" --deployer delivery --deployer-folder=to_apt
