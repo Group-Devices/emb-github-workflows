@@ -517,7 +517,7 @@ jobs:
                         echo "return value $ret"
                         if [ "$(echo "$res"| jq -r .message)" != "Reference already exists" ]; then
                                 echo "ERROR $res"
-                                : # exit 1
+                                echo "exit 1"
                         fi
                 fi
               fi
