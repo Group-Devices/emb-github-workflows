@@ -493,7 +493,7 @@ jobs:
                 prev_sha=$(jq -r -c ".object.sha" ./getref.json)
                 if [ "${prev_sha}" != "${sha}" ]; then
                   echo "Changed branch from ${prev_sha} to ${sha}"
-                  echo gh api --method POST \
+                  gh api --method POST \
                     -H 'Accept: application/vnd.github+json' \
                     -H 'X-GitHub-Api-Version: 2022-11-28' \
                     "/repos/${URL_REL}/git/refs" \
