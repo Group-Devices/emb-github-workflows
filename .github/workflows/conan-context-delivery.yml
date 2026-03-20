@@ -482,7 +482,7 @@ jobs:
             echo "${OWNER_GIT_TOKEN}" > mytoken.txt
             gh auth login --with-token < mytoken.txt
             rm mytoken.txt
-            if [ "${GITHUB_REF_TYPE}" = 'branch' ]; then
+
             if [ "${{ needs.extract-collectors.outputs.from_repository_url}}" != "${{ needs.extract-collectors.outputs.conan_release_remote_url}}" ]; then
               : # ---------- BRANCH ---------------------------------------
               : # Create branch systematically if not existing , update it to the sha
@@ -517,11 +517,11 @@ jobs:
                         echo "return value $ret"
                         if [ "$(echo "$res"| jq -r .message)" != "Reference already exists" ]; then
                                 echo "ERROR $res"
-                                : # exit 1
+                                exit 1
                         fi
                 fi
               fi
-              fi
+
               : # ---------- UPLOAD ARTEFACT TO CONAN REPOSITORY -----------
               : # Upload recipe and binary package to conan repository
               : # conan download is needed to also get exports_sources
