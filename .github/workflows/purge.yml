@@ -244,10 +244,10 @@ jobs:
       - extract-collectors
       - repositories-preparation
     container:
-      image: docker-internal.it.voqa.com/default-compiler:main
+      image: repository.nexus.vixtechnology.com/docker-internal-group/default-compiler:main
       credentials:
-        username: ${{ secrets.DOCKER_INTERNAL_REGISTRY_USERNAME}}
-        password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
+        username: ${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
+        password: ${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
     env:
       TARGET_WORKFLOW: "delivery.yml"
       EVENT_NAME: ${{github.event_name}}
