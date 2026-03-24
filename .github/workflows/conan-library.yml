@@ -248,21 +248,6 @@ jobs:
           name: build-list-${{ matrix.profile }}
           path: build-${{ matrix.profile }}.json
           retention-days: 2
-  build_docs:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: install
-        shell: bash
-        run: |
-          pip install json-schema-for-humans
-          mkdir -p docs
-          generate-schema-doc --config template_name=js schemas/ docs
-      - if: ${{ hashFiles('docs') != '' }}
-        name: Upload docs artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: docs/ 
           
   rebuild-collectors:
     runs-on: ubuntu-latest
