@@ -247,11 +247,9 @@ jobs:
         if: needs.extract-collectors.outputs.deliverable == 'true'
         run: |
             echo "Nexus URL: $NEXUS_URL"
-            cmd="curl -s -o output.json -w "%{http_code}\n" --header 'Content-Type: application/json' \
+            response=$(curl -s -o output.json -w "%{http_code}\n" --header 'Content-Type: application/json' \
                         -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}" \
-                        "${NEXUS_URL}/service/rest/v1/repositories/${APT_REPO_NAME}""
-            echo "command: $cmd"
-            response=$($cmd)
+                        "${NEXUS_URL}/service/rest/v1/repositories/${APT_REPO_NAME}")
             if [ "${response}" = "200" ]; then
               echo "Repository ${APT_REPO_NAME} already exists. Skipping creation...."
             elif [ "${response}" = "404" ]; then
@@ -274,8 +272,6 @@ jobs:
               else
                 echo "Failed to create apt repo"
                 echo "Http error: ${response}"
-                echo "Response output:"
-                cat output.json
                 exit 1
               fi
             else
