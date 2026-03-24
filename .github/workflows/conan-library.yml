@@ -252,8 +252,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - if: ${{ hashFiles('schemas') != '' }}
-        name: install
+      - name: install
         run: |
           pip install json-schema-for-humans
           mkdir -p docs
