@@ -290,6 +290,7 @@ jobs:
           repository_url_base=$(echo "${conan_release_repository_url}" | cut -d'/' -f1-3)
           conan_release_repository_name="${{ needs.extract-collectors.outputs.conan_release_repository_name }}"
           response=$(curl -s -o output.json -w "%{http_code}\n" --header 'Content-Type: application/json' \
+                      -u "${{ env.RELEASE_REGISTRY_USERNAME }}x:${{ env.RELEASE_REGISTRY_TOKEN }}" \
                       "${repository_url_base}/service/rest/v1/repositories/${conan_release_repository_name}")
           if [ "${response}" = "200" ]; then
             echo "Repository ${conan_release_repository_name} already exists. Skipping creation...."
