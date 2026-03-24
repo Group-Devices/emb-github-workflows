@@ -248,6 +248,10 @@ jobs:
           name: build-list-${{ matrix.profile }}
           path: build-${{ matrix.profile }}.json
           retention-days: 2
+      - name: Upload docs artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/          
   rebuild-collectors:
     runs-on: ubuntu-latest
     if: inputs.run-as-fast-build == false && inputs.enable-rebuild-collectors && github.event_name != 'pull_request'
