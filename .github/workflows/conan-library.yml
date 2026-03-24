@@ -256,6 +256,7 @@ jobs:
         name: install
         run: |
           pip install json-schema-for-humans
+          mkdir -p docs
           generate-schema-doc --config template_name=js schemas/ docs
       - if: ${{ hashFiles('docs') != '' }}
         name: Upload docs artifact
