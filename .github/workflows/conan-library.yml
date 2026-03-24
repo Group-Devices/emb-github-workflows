@@ -56,10 +56,10 @@ jobs:
     runs-on: eks-runner-linux-x64-medium
     if: inputs.run-as-fast-build == false
     container:
-      image: docker-internal.it.voqa.com/aurora-compiler:main
+      image: repository.nexus.vixtechnology.com/docker-internal-group/aurora-compiler:main
       credentials:
-        username: ${{ secrets.DOCKER_INTERNAL_REGISTRY_USERNAME}}
-        password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
+        username: ${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
+        password: ${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
     outputs:
       build-profile-list: ${{ steps.generate-conan-context.outputs.build-profile-list }}
       collectors-list: ${{ steps.generate-conan-context.outputs.collectors-list }}
@@ -75,10 +75,10 @@ jobs:
     outputs:
       status: ${{ job.status }}
     container:
-      image: docker-internal.it.voqa.com/aurora-compiler:main
+      image: repository.nexus.vixtechnology.com/docker-internal-group/aurora-compiler:main
       credentials:
-        username: ${{ secrets.DOCKER_INTERNAL_REGISTRY_USERNAME}}
-        password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
+        username: ${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
+        password: ${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
     needs:
       - generate-conan-context
     steps:
@@ -140,10 +140,10 @@ jobs:
       matrix:
         profile: ${{ inputs.conan-profiles != '' && fromJson(inputs.conan-profiles) || fromJson(needs.generate-conan-context.outputs.build-profile-list) }}
     container:
-      image: docker-internal.it.voqa.com/${{ matrix.profile }}-compiler:main
+      image: repository.nexus.vixtechnology.com/docker-internal-group/${{ matrix.profile }}-compiler:main
       credentials:
-        username: ${{ secrets.DOCKER_INTERNAL_REGISTRY_USERNAME}}
-        password: ${{ secrets.DOCKER_INTERNAL_REGISTRY_TOKEN}}
+        username: ${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
+        password: ${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
     steps:
       - uses: actions/checkout@v4
       - name: Set safe git path
