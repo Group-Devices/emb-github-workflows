@@ -263,10 +263,6 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs/ 
-      - if: ${{ hashFiles('docs') != '' }}
-        name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
           
   rebuild-collectors:
     runs-on: ubuntu-latest
