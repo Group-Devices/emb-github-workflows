@@ -248,7 +248,8 @@ jobs:
           name: build-list-${{ matrix.profile }}
           path: build-${{ matrix.profile }}.json
           retention-days: 2
-      - name: Upload docs artifact
+      - if: ${{ hashFiles('docs') != '' }}
+        name: Upload docs artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs/          
