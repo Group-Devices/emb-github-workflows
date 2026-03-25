@@ -280,14 +280,14 @@ jobs:
           repository_url_base=$(echo "${conan_release_repository_url}" | cut -d'/' -f1-3)
           conan_release_repository_name="${{ needs.extract-collectors.outputs.conan_release_repository_name }}"
           response=$(curl -s -o output.json -w "%{http_code}\n" --header 'Content-Type: application/json' \
-                      -u "${{ env.RELEASE_REGISTRY_USERNAME }}:${{ env.RELEASE_REGISTRY_TOKEN }}" \
+                      -u "${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}:${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}" \
                       "${repository_url_base}/service/rest/v1/repositories/${conan_release_repository_name}")
           if [ "${response}" = "200" ]; then
             echo "Repository ${conan_release_repository_name} already exists. Skipping creation...."
           elif [ "${response}" = "404" ]; then
             echo "Repository ${conan_release_repository_name} does not exist. Creating it..."
             cmd="curl --fail --header "Content-Type: application/json" \
-              -u "${{ env.RELEASE_REGISTRY_USERNAME }}:${{ env.RELEASE_REGISTRY_TOKEN }}" \
+              -u "${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}:${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}" \
               "${repository_url_base}/service/rest/v1/repositories/conan/hosted/" \
               -d "{  \"name\": \"${conan_release_repository_name}\", \"online\": true, \"storage\": {\"blobStoreName\": \"${NEXUS_CONAN_REPO_BLOBSTORE}\",\"strictContentTypeValidation\": true,\"writePolicy\": \"allow\"}}""
             echo "Command: $cmd"
