@@ -286,12 +286,10 @@ jobs:
             echo "Repository ${conan_release_repository_name} already exists. Skipping creation...."
           elif [ "${response}" = "404" ]; then
             echo "Repository ${conan_release_repository_name} does not exist. Creating it..."
-            cmd="curl --fail --header "Content-Type: application/json" \
+            curl --fail --header "Content-Type: application/json" \
               -u "${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}:${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}" \
               "${repository_url_base}/service/rest/v1/repositories/conan/hosted/" \
-              -d "{  \"name\": \"${conan_release_repository_name}\", \"online\": true, \"storage\": {\"blobStoreName\": \"${NEXUS_CONAN_REPO_BLOBSTORE}\",\"strictContentTypeValidation\": true,\"writePolicy\": \"allow\"}}""
-            echo "Command: $cmd"
-            $($cmd)
+              -d "{  \"name\": \"${conan_release_repository_name}\", \"online\": true, \"storage\": {\"blobStoreName\": \"${NEXUS_CONAN_REPO_BLOBSTORE}\",\"strictContentTypeValidation\": true,\"writePolicy\": \"allow\"}}"
           else
             echo "Repository ${conan_release_repository_name} cannot be found. But error is not 404."
             echo "Http error: ${response}"
