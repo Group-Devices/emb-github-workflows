@@ -15,7 +15,7 @@ env:
   CONAN: "conan"   # echo conan for a dry run
   NEXUS_URL: "https://repository.nexus.vixtechnology.com"
   NEXUS_APT_REPO_BLOBSTORE: "nexus-bs-prd-apt"
-  NEXUS_CONAN_REPO_BLOBSTORE: "nexus-bs-voqa-prd-conan"
+  NEXUS_CONAN_REPO_BLOBSTORE: "nexus-bs-prd-conan"
 
 jobs:
   preflight-checks:
@@ -261,21 +261,11 @@ jobs:
               rm -f gpg_key_base64.txt gpg_key.pem
               # Create the nexus repository
               echo "repo: $APT_REPO_NAME store: $NEXUS_APT_REPO_BLOBSTORE policy: $APT_REPO_WRITE_POLICY distri: $NEXUS_APT_DISTRIBUTION_NAME"
-              response=$(curl --fail -o output.json -w "%{http_code}\n" --header "Content-Type: application/json" \
+              curl -s --fail -o output.json -w "%{http_code}\n" --header "Content-Type: application/json" \
                 -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}" \
                 "${NEXUS_URL}/service/rest/v1/repositories/apt/hosted/" \
                 -d "{  \"name\": \"${APT_REPO_NAME}\", \"online\": true, \"storage\": {\"blobStoreName\": \"${NEXUS_APT_REPO_BLOBSTORE}\",\"strictContentTypeValidation\": true,\"writePolicy\": \"${APT_REPO_WRITE_POLICY}\"}, \
-                \"apt\": {\"distribution\": \"${NEXUS_APT_DISTRIBUTION_NAME}\"}, \"aptSigning\": { \"keypair\": \"${key}\",\"passphrase\": \"${{ secrets.APT_GPG_PASSPHRASE }}\"}}")
-              response=$($CMD)
-              if [ "${response}" = "200" ]; then
-                echo "Apt repo created"
-              else
-                echo "Failed to create apt repo"
-                echo "Http error: ${response}"
-                echo "Response output:"
-                cat output.json
-                exit 1
-              fi
+                \"apt\": {\"distribution\": \"${NEXUS_APT_DISTRIBUTION_NAME}\"}, \"aptSigning\": { \"keypair\": \"${key}\",\"passphrase\": \"${{ secrets.APT_GPG_PASSPHRASE }}\"}}"
             else
               echo "Repository ${APT_REPO_NAME} cannot be found. But error is not 404."
               echo "Http error: ${response}"
@@ -290,14 +280,15 @@ jobs:
           repository_url_base=$(echo "${conan_release_repository_url}" | cut -d'/' -f1-3)
           conan_release_repository_name="${{ needs.extract-collectors.outputs.conan_release_repository_name }}"
           response=$(curl -s -o output.json -w "%{http_code}\n" --header 'Content-Type: application/json' \
-                      -u "${{ env.RELEASE_REGISTRY_USERNAME }}:${{ env.RELEASE_REGISTRY_TOKEN }}" \
+                      -u "${{env.RELEASE_REGISTRY_USERNAME}}:${{env.RELEASE_REGISTRY_TOKEN}}" \
                       "${repository_url_base}/service/rest/v1/repositories/${conan_release_repository_name}")
           if [ "${response}" = "200" ]; then
             echo "Repository ${conan_release_repository_name} already exists. Skipping creation...."
           elif [ "${response}" = "404" ]; then
             echo "Repository ${conan_release_repository_name} does not exist. Creating it..."
+            echo "baseUrl: ${repository_url_base} blobStore: ${NEXUS_CONAN_REPO_BLOBSTORE} "
             curl --fail --header "Content-Type: application/json" \
-              -u "${{ env.RELEASE_REGISTRY_USERNAME }}:${{ env.RELEASE_REGISTRY_TOKEN }}" \
+              -u "${{env.RELEASE_REGISTRY_USERNAME}}:${{env.RELEASE_REGISTRY_TOKEN}}" \
               "${repository_url_base}/service/rest/v1/repositories/conan/hosted/" \
               -d "{  \"name\": \"${conan_release_repository_name}\", \"online\": true, \"storage\": {\"blobStoreName\": \"${NEXUS_CONAN_REPO_BLOBSTORE}\",\"strictContentTypeValidation\": true,\"writePolicy\": \"allow\"}}"
           else
