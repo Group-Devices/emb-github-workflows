@@ -15,7 +15,7 @@ env:
   CONAN: "conan"   # echo conan for a dry run
   NEXUS_URL: "https://repository.nexus.vixtechnology.com"
   NEXUS_APT_REPO_BLOBSTORE: "nexus-bs-prd-apt"
-  NEXUS_CONAN_REPO_BLOBSTORE: "nexus-bs-voqa-prd-conan"
+  NEXUS_CONAN_REPO_BLOBSTORE: "nexus-bs-prd-conan"
 
 jobs:
   preflight-checks:
