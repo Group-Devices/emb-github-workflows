@@ -116,6 +116,14 @@ jobs:
         with:
           files: |
             ci-report/junit-results.xml
+
+      - name: Report code coverage
+        uses: zgosalvez/github-actions-report-lcov@v4
+        with:
+          coverage-files: ci-report/*.info
+          minimum-coverage: 0
+          artifact-name: code-coverage-report
+          update-comment: true            
           
   quality-analysis:
     runs-on: eks-runner-linux-x64-medium
