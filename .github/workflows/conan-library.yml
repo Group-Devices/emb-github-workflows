@@ -43,6 +43,11 @@ on:
         required: false
         type: string
         default: ''
+      run-unit-tests:
+        description: 'Run unit tests'
+        required: false
+        type: boolean
+        default: false
 
 env:
   SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
@@ -71,7 +76,7 @@ jobs:
           json-secrets: ${{ toJson(secrets) }}
   unit-tests:
     runs-on: eks-runner-linux-x64-medium
-    if: inputs.run-as-fast-build == false
+    if: inputs.run-as-fast-build == false && inputs.run-unit-tests
     outputs:
       status: ${{ job.status }}
     container:
