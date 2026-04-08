@@ -111,7 +111,7 @@ jobs:
           cat coverage/Testing/Temporary/LastTest*
           
       - name: Publish Test Results
-        uses: EnricoMi/publish-unit-test-result-action@v2
+        uses: EnricoMi/publish-unit-test-result-action/linux@v2
         if: (!cancelled())
         with:
           files: |
