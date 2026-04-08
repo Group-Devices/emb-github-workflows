@@ -122,6 +122,7 @@ jobs:
         with:
           coverage-files: ci-report/*.info
           minimum-coverage: 0
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           artifact-name: code-coverage-report
           update-comment: true            
           
