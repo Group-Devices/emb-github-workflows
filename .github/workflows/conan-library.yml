@@ -116,7 +116,6 @@ jobs:
         with:
           files: |
             ci-report/junit-results.xml
-          comment_mode: off
           
   quality-analysis:
     runs-on: eks-runner-linux-x64-medium
