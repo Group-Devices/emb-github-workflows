@@ -599,6 +599,7 @@ jobs:
           import html
           import shutil
           from json_schema_for_humans.generate import generate_from_filename
+          from json_schema_for_humans.generation_configuration import GenerationConfiguration
           import markdown
           import textwrap
 
@@ -667,7 +668,11 @@ jobs:
 
             if schemas_dir.is_dir():
               schemas_out = package_out / 'schemas'
-              generate_from_filename(str(schemas_dir), str(schemas_out), config={'template_name': 'js'})
+              generate_from_filename(
+                str(schemas_dir),
+                str(schemas_out),
+                config=GenerationConfiguration(template_name='js'),
+              )
               page_entries.append(('Schemas', 'schemas/index.html'))
 
             package_index = package_out / 'index.html'
