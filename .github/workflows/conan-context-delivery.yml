@@ -8,6 +8,11 @@ on:
         required: false
         type: boolean
         default: true
+      docs-enabled:
+        description: 'Generate aggregated package docs'
+        required: false
+        type: boolean
+        default: false
 
 env:
   CONAN_CONTEXT_PATH: conan-context.yml
@@ -560,6 +565,7 @@ jobs:
 
 
       - name: Collect docs delivery
+        if: inputs.docs-enabled == true
         run: |
           requires=""
           sep=""
@@ -576,10 +582,12 @@ jobs:
           ${{ env.CONAN }} remote enable "${{ needs.extract-collectors.outputs.conan_release_remote_name }}"
 
       - name: Install docs generator tools
+        if: inputs.docs-enabled == true
         run: |
           python3 -m pip install markdown json-schema-for-humans
 
       - name: Build bundle docs site
+        if: inputs.docs-enabled == true
         run: |
           python3 - <<'PYDOCS'
           from pathlib import Path
@@ -719,6 +727,7 @@ jobs:
 
 
       - name: 'Upload bundle docs site'
+        if: inputs.docs-enabled == true
         uses: actions/upload-artifact@v6
         with:
           name: docs-${{ matrix.profile }}
