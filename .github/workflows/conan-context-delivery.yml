@@ -558,6 +558,149 @@ jobs:
                 "@${deb}" "${NEXUS_URL}/repository/${{ needs.repositories-preparation.outputs.apt-repo-name }}/"
             done
 
+
+      - name: Collect docs delivery
+        run: |
+          requires=""
+          sep=""
+          yq -r ".build.collectors[]" ./conan-context.yml > tmp_input
+          while read -r collector ; do
+            collector=${collector#*/}
+            requires="${requires}${sep}--requires=${collector}/[*]"
+            sep=" "
+          done < tmp_input
+          echo "collector requires ${requires}"
+          ${{ env.CONAN }} remote disable "${{ needs.extract-collectors.outputs.conan_release_remote_name }}"
+          # shellcheck disable=SC2086
+          ${{ env.CONAN }} install ${requires} -pr:h "${{ matrix.profile }}" --deployer docs --deployer-folder=to_docs
+          ${{ env.CONAN }} remote enable "${{ needs.extract-collectors.outputs.conan_release_remote_name }}"
+
+      - name: Install docs generator tools
+        run: |
+          python3 -m pip install markdown json-schema-for-humans
+
+      - name: Build bundle docs site
+        run: |
+          python3 - <<'PYDOCS'
+          from pathlib import Path
+          import html
+          import shutil
+          from json_schema_for_humans.generate import generate_from_filename
+          import markdown
+
+          source_root = Path('to_docs')
+          output_root = Path('to_docs_site')
+          if output_root.exists():
+            shutil.rmtree(output_root)
+          output_root.mkdir(parents=True, exist_ok=True)
+
+          def read_title(markdown_text: str, fallback: str) -> str:
+            for line in markdown_text.splitlines():
+              if line.startswith('# '):
+                return line[2:].strip()
+            return fallback
+
+          def relative_back(path: Path) -> str:
+            depth = len(path.relative_to(output_root).parts) - 1
+            return '/'.join(['..'] * depth) or '.'
+
+          package_entries = []
+          for package_dir in sorted(p for p in source_root.iterdir() if p.is_dir()):
+            docs_dir = package_dir / 'docs'
+            schemas_dir = package_dir / 'schemas'
+            if not docs_dir.is_dir() and not schemas_dir.is_dir():
+              continue
+
+            package_out = output_root / package_dir.name
+            package_out.mkdir(parents=True, exist_ok=True)
+            page_entries = []
+
+            if docs_dir.is_dir():
+              for src in sorted(docs_dir.rglob('*')):
+                rel = src.relative_to(docs_dir)
+                dst = package_out / rel
+                if src.is_dir():
+                  dst.mkdir(parents=True, exist_ok=True)
+                  continue
+
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                if src.suffix.lower() == '.md':
+                  markdown_text = src.read_text(encoding='utf-8')
+                  title = read_title(markdown_text, src.stem.replace('-', ' ').title())
+                  html_body = markdown.markdown(markdown_text, extensions=['extra', 'tables', 'toc'])
+                  html_path = dst.with_suffix('.html')
+                  back = relative_back(html_path)
+                  html_path.write_text(
+                    f'''<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{html.escape(title)}</title>
+</head>
+<body>
+  <nav><a href="{back}/index.html">Back to bundle docs</a></nav>
+  <main>
+{html_body}
+  </main>
+</body>
+</html>
+''',
+                    encoding='utf-8',
+                  )
+                  page_entries.append((title, html_path.relative_to(package_out).as_posix()))
+                else:
+                  shutil.copy2(src, dst)
+
+            if schemas_dir.is_dir():
+              schemas_out = package_out / 'schemas'
+              generate_from_filename(str(schemas_dir), str(schemas_out), config={'template_name': 'js'})
+              page_entries.append(('Schemas', 'schemas/index.html'))
+
+            package_index = package_out / 'index.html'
+            package_links = ''.join(
+              f'    <li><a href="{href}">{html.escape(title)}</a></li>\n'
+              for title, href in page_entries
+            )
+            package_index.write_text(
+              f'''<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{html.escape(package_dir.name)} docs</title>
+</head>
+<body>
+  <h1>{html.escape(package_dir.name)} documentation</h1>
+  <ul>
+{package_links}  </ul>
+  <p><a href="../index.html">Back to bundle docs</a></p>
+</body>
+</html>
+''',
+              encoding='utf-8',
+            )
+            package_entries.append((package_dir.name, f'{package_dir.name}/index.html'))
+
+          index_links = ''.join(
+            f'    <li><a href="{href}">{html.escape(name)}</a></li>\n'
+            for name, href in package_entries
+          )
+          (output_root / 'index.html').write_text(
+            f'''<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Bundle docs</title>
+</head>
+<body>
+  <h1>Bundle documentation</h1>
+  <ul>
+{index_links}  </ul>
+</body>
+</html>
+''',
+            encoding='utf-8',
+          )
+          PYDOCS
       - name: 'Upload bundle release packages contents'
         uses: actions/upload-artifact@v6
         with:
@@ -573,6 +716,13 @@ jobs:
           path: ./to_apt/packages.json
           retention-days: 2
 
+
+      - name: 'Upload bundle docs site'
+        uses: actions/upload-artifact@v6
+        with:
+          name: docs-${{ matrix.profile }}
+          path: ./to_docs_site
+          retention-days: 2
   finalize-cloning:
     runs-on: ubuntu-latest
     needs:
