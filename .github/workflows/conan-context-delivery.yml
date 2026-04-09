@@ -639,6 +639,9 @@ jobs:
                   continue
 
                 dst.parent.mkdir(parents=True, exist_ok=True)
+                if rel.parts and rel.parts[0] == 'doxygen':
+                  shutil.copy2(src, dst)
+                  continue
                 if src.suffix.lower() == '.md':
                   markdown_text = src.read_text(encoding='utf-8')
                   title = read_title(markdown_text, src.stem.replace('-', ' ').title())
@@ -665,6 +668,10 @@ jobs:
                   page_entries.append((title, html_path.relative_to(package_out).as_posix()))
                 else:
                   shutil.copy2(src, dst)
+
+            doxygen_index = package_out / 'doxygen' / 'index.html'
+            if doxygen_index.is_file():
+              page_entries.append(('API', 'doxygen/index.html'))
 
             if schemas_dir.is_dir():
               schemas_out = package_out / 'schemas'
