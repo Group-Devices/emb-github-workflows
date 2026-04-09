@@ -668,6 +668,7 @@ jobs:
 
             if schemas_dir.is_dir():
               schemas_out = package_out / 'schemas'
+              schemas_out.mkdir(parents=True, exist_ok=True)
               generate_from_filename(
                 str(schemas_dir),
                 str(schemas_out),
