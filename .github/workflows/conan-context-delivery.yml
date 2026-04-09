@@ -587,6 +587,7 @@ jobs:
           import shutil
           from json_schema_for_humans.generate import generate_from_filename
           import markdown
+          import textwrap
 
           source_root = Path('to_docs')
           output_root = Path('to_docs_site')
@@ -631,20 +632,20 @@ jobs:
                   html_path = dst.with_suffix('.html')
                   back = relative_back(html_path)
                   html_path.write_text(
-                    f'''<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>{html.escape(title)}</title>
-</head>
-<body>
-  <nav><a href="{back}/index.html">Back to bundle docs</a></nav>
-  <main>
-{html_body}
-  </main>
-</body>
-</html>
-''',
+                    textwrap.dedent(f'''                    <!doctype html>
+                    <html lang="en">
+                    <head>
+                      <meta charset="utf-8">
+                      <title>{html.escape(title)}</title>
+                    </head>
+                    <body>
+                      <nav><a href="{back}/index.html">Back to bundle docs</a></nav>
+                      <main>
+                    {html_body}
+                      </main>
+                    </body>
+                    </html>
+                    '''),
                     encoding='utf-8',
                   )
                   page_entries.append((title, html_path.relative_to(package_out).as_posix()))
@@ -662,20 +663,20 @@ jobs:
               for title, href in page_entries
             )
             package_index.write_text(
-              f'''<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>{html.escape(package_dir.name)} docs</title>
-</head>
-<body>
-  <h1>{html.escape(package_dir.name)} documentation</h1>
-  <ul>
-{package_links}  </ul>
-  <p><a href="../index.html">Back to bundle docs</a></p>
-</body>
-</html>
-''',
+              textwrap.dedent(f'''              <!doctype html>
+              <html lang="en">
+              <head>
+                <meta charset="utf-8">
+                <title>{html.escape(package_dir.name)} docs</title>
+              </head>
+              <body>
+                <h1>{html.escape(package_dir.name)} documentation</h1>
+                <ul>
+              {package_links}  </ul>
+                <p><a href="../index.html">Back to bundle docs</a></p>
+              </body>
+              </html>
+              '''),
               encoding='utf-8',
             )
             package_entries.append((package_dir.name, f'{package_dir.name}/index.html'))
@@ -685,19 +686,19 @@ jobs:
             for name, href in package_entries
           )
           (output_root / 'index.html').write_text(
-            f'''<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>Bundle docs</title>
-</head>
-<body>
-  <h1>Bundle documentation</h1>
-  <ul>
-{index_links}  </ul>
-</body>
-</html>
-''',
+            textwrap.dedent(f'''            <!doctype html>
+            <html lang="en">
+            <head>
+              <meta charset="utf-8">
+              <title>Bundle docs</title>
+            </head>
+            <body>
+              <h1>Bundle documentation</h1>
+              <ul>
+            {index_links}  </ul>
+            </body>
+            </html>
+            '''),
             encoding='utf-8',
           )
           PYDOCS
