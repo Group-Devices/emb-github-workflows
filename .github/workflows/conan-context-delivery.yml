@@ -570,7 +570,7 @@ jobs:
 
 
       - name: Collect docs delivery
-        if: inputs.docs-enabled == true
+        if: inputs.docs-enabled == true && matrix.profile == 'default'
         run: |
           requires=""
           sep=""
@@ -587,12 +587,12 @@ jobs:
           ${{ env.CONAN }} remote enable "${{ needs.extract-collectors.outputs.conan_release_remote_name }}"
 
       - name: Install docs generator tools
-        if: inputs.docs-enabled == true
+        if: inputs.docs-enabled == true && matrix.profile == 'default'
         run: |
           python3 -m pip install markdown json-schema-for-humans
 
       - name: Build bundle docs site
-        if: inputs.docs-enabled == true
+        if: inputs.docs-enabled == true && matrix.profile == 'default'
         run: |
           python3 - <<'PYDOCS'
           from pathlib import Path
@@ -745,7 +745,7 @@ jobs:
 
 
       - name: 'Upload bundle docs site'
-        if: inputs.docs-enabled == true
+        if: inputs.docs-enabled == true && matrix.profile == 'default'
         uses: actions/upload-artifact@v6
         with:
           name: docs-${{ matrix.profile }}

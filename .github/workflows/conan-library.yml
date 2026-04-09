@@ -185,6 +185,29 @@ jobs:
         with:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
+      - name: Install documentation tools
+        if: inputs.enabled-doxygen && matrix.profile == 'default'
+        run: |
+          apt-get update
+          apt-get install -y doxygen python3-pip
+
+      - name: Generate Doxyfile
+        if: inputs.enabled-doxygen && matrix.profile == 'default'
+        shell: bash
+        run: |
+          mkdir -p docs/doxygen
+          cat > Doxyfile <<'EOF'
+          PROJECT_NAME="${{ github.event.repository.name }}"
+          RECURSIVE=YES
+          HTML_OUTPUT=docs/doxygen
+          EOF
+
+      - name: Build API docs
+        if: inputs.enabled-doxygen && matrix.profile == 'default'
+        shell: bash
+        run: |
+          doxygen Doxyfile
+
       - name: Conan create
         shell: bash
         run: |
