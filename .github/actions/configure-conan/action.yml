@@ -1,0 +1,113 @@
+name: "action-configure-conan"
+
+description: "Configure conan according to https://kubapay.atlassian.net/wiki/spaces/VOQA/pages/716079105/Development+workflow"
+
+inputs:
+  json-secrets:
+    description: "All secrets in json format"
+    required: true
+  conan-context-path:
+    description: "The path to the conan context file"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set safe git path
+      shell: bash
+      run: |
+        repo=$(basename ${{ github.repository }})
+        git config --global --add safe.directory "/__w/${repo}/${repo}"
+    - name: Setup .NET
+      shell: bash
+      run: |
+        all_secrets='${{ inputs.json-secrets }}'
+
+        git config --global url."https://github.com/".insteadOf git@github.com:
+
+        organisations=$(yq -r '.organisations[]' ${{ inputs.conan-context-path }})
+
+        if [ "null" = "$organisations" ]; then
+          echo "Field organisations is missing in ${{ inputs.conan-context-path }}"
+          echo "Please set it"
+          exit 1
+        fi
+
+        if [ -z "$organisations" ]; then
+          echo "Field organisations is empty in ${{ inputs.conan-context-path }}"
+          echo "Skip conan git credentials configuration"
+        else
+          echo "Start conan git credentials configuration"
+          for org in $organisations; do
+            secret_to_extract="GIT_TOKEN_$(echo $org | tr '[:lower:]' '[:upper:]' | tr '-' '_')"
+            echo "Extracting github secret $secret_to_extract for organisation $org"
+            secret=$(echo $all_secrets | jq -r ".$secret_to_extract")
+            if [ "null" = "$secret" ]; then
+              echo "Secret $secret_to_extract not found !"
+              echo "Please add secret $secret_to_extract to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
+              exit 1
+            else
+              echo "Secret $secret_to_extract found !"
+              echo "Configure git conan credentials for https://github.com/$org"
+              git config --global credential."https://github.com/$org".helper "!f() { sleep 1; echo \"username=github\"; echo \"password=${secret}\"; }; f"
+            fi
+          done
+        fi
+
+        echo "Start conan install config"
+        conan_config_url=$(yq e '.conan.config.url' ${{ inputs.conan-context-path }})
+        conan_config_branch=$(yq e '.conan.config.branch' ${{ inputs.conan-context-path }})
+        if [ -z "$conan_config_url" ] || [ "null" = "$conan_config_url" ]; then
+          echo "Field conan.config.url is missing in ${{ inputs.conan-context-path }}"
+          echo "Please add it"
+          exit 1
+        fi
+        if [ -z "$conan_config_branch" ] || [ "null" = "$conan_config_branch" ]; then
+          echo "Field conan.config.branch is missing in ${{ inputs.conan-context-path }}, use main by default"
+          conan_config_branch="main"
+        fi
+        echo "Will use conan_config_url: ${conan_config_url}, conan_config_branch: ${conan_config_branch}"
+        conan config install "${conan_config_url}" --args="-b ${conan_config_branch}"
+
+        echo "Start conan remotes configuration"
+        repositories=$(yq eval '.repositories' ${{ inputs.conan-context-path }} -o=json | jq)
+
+        if [ "null" = "$repositories" ]; then
+          echo "Field repositories is missing in ${{ inputs.conan-context-path }}"
+          echo "Please set it"
+          exit 1
+        fi
+
+        if [ -z "$repositories" ]; then
+          echo "Field repositories is empty in ${{ inputs.conan-context-path }}"
+          echo "Skip conan remote configuration"
+        else
+          for kv in $(echo $repositories | jq -r 'to_entries[] | "\(.key)=\(.value)"'); do
+            repo_name=${kv%%=*}
+            repo_url=${kv#*=}
+
+            echo "Add conan remote ${repo_name}: ${repo_url}"
+            conan remote add "${repo_name}" "${repo_url}"
+
+            echo "Add conan authentication for ${repo_name}"
+            repo_url_target=$(echo $repo_url | sed -e 's/https:\/\///' -e 's/\/.*//')
+            secret_username_to_extract="REPOSITORY_USERNAME_$(echo $repo_url_target | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')"
+            echo "Extracting github secret ${secret_username_to_extract}"
+            secret_username=$(echo $all_secrets | jq -r ".${secret_username_to_extract}")
+            if [ "null" = "${secret_username}" ]; then
+              echo "Secret ${secret_username_to_extract} not found !"
+              echo "Please add secret ${secret_username_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
+              exit 1
+            fi
+            secret_token_to_extract="REPOSITORY_TOKEN_$(echo $repo_url_target | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')"
+            echo "Extracting github secret ${secret_token_to_extract}"
+            secret_token=$(echo $all_secrets | jq -r ".${secret_token_to_extract}")
+            if [ "null" = "${secret_token}" ]; then
+              echo "Secret ${secret_token_to_extract} not found !"
+              echo "Please add secret ${secret_token_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
+              exit 1
+            fi
+            conan remote login -p "${secret_token}" "${repo_name}" "${secret_username}"
+          done
+        fi
+        all_secrets=''

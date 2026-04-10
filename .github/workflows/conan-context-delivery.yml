@@ -395,7 +395,7 @@ jobs:
           git config --global --add safe.directory "/__w/${repo}/${repo}"
 
       - name: Configure conan
-        uses: KUBA-EMB-CI/action-configure-conan@main
+        uses: Group-Devices/emb-github-workflows/.github/actions/configure-conan@main
         with:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
@@ -605,7 +605,7 @@ jobs:
           git config --global --add safe.directory "/__w/${repo}/${repo}"
 
       - name: Configure conan
-        uses: KUBA-EMB-CI/action-configure-conan@main
+        uses: Group-Devices/emb-github-workflows/.github/actions/configure-conan@main
         with:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
@@ -982,7 +982,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Authenticate gh for current repository owner
-        uses: ./.github/actions/gh-auth-owner
+        uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@main
         with:
           owner: ${{ github.repository_owner }}
           json-secrets: ${{ toJson(secrets) }}
@@ -1040,7 +1040,7 @@ jobs:
           echo "OWNER=${owner}" >> "$GITHUB_ENV"
 
       - name: Extract authentication token for ${{ env.OWNER }}
-        uses: ./.github/actions/gh-auth-owner
+        uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@main
         with:
           owner: ${{ env.OWNER }}
           json-secrets: ${{ toJson(secrets) }}

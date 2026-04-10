@@ -75,7 +75,7 @@ jobs:
       collectors-list: ${{ steps.generate-conan-context.outputs.collectors-list }}
     steps:
       - uses: actions/checkout@v4
-      - uses: KUBA-EMB-CI/action-generate-conan-context@main
+      - uses: Group-Devices/emb-github-workflows/.github/actions/generate-conan-context@main
         id: generate-conan-context
         with:
           json-secrets: ${{ toJson(secrets) }}
@@ -98,7 +98,7 @@ jobs:
           name: conan-context
           path: .conan-context
       - name: Configure Conan
-        uses: KUBA-EMB-CI/action-configure-conan@main
+        uses: Group-Devices/emb-github-workflows/.github/actions/configure-conan@main
         with:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
@@ -179,7 +179,7 @@ jobs:
           name: conan-context
           path: .conan-context
       - name: Configure Conan
-        uses: KUBA-EMB-CI/action-configure-conan@main
+        uses: Group-Devices/emb-github-workflows/.github/actions/configure-conan@main
         with:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
@@ -304,7 +304,7 @@ jobs:
           echo "OWNER=${owner}" >> "$GITHUB_ENV"
 
       - name: Extract authentication token for ${{ env.OWNER }}
-        uses: ./.github/actions/gh-auth-owner
+        uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@main
         with:
           owner: ${{ env.OWNER }}
           json-secrets: ${{ toJson(secrets) }}
@@ -364,7 +364,7 @@ jobs:
           echo "Owner: ${OWNER}"
           echo "OWNER=${OWNER}" >> "$GITHUB_ENV"
       - name: Extract authentication token
-        uses: ./.github/actions/gh-auth-owner
+        uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@main
         with:
           owner: ${{ env.OWNER }}
           json-secrets: ${{ toJson(secrets) }}

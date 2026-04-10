@@ -262,10 +262,10 @@ jobs:
           git config --global --add safe.directory "/__w/${repo}/${repo}"
 
       - name: Configure conan
-        uses: KUBA-EMB-CI/action-configure-conan@main
+        uses: Group-Devices/emb-github-workflows/.github/actions/configure-conan@main
         with:
           json-secrets: ${{ toJson(secrets) }}
-          conan-context-path: ${CONAN_CONTEXT_PATH}
+          conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
 
       - name: Add original repository in configuration
         run: |
@@ -275,9 +275,7 @@ jobs:
           secret_username_to_extract=REPOSITORY_USERNAME_$(echo "$repo_url_target" | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')
           echo "Extracting github secret ${secret_username_to_extract}"
           all_secrets='${{ tojson(secrets) }}'
-          echo "all secrest $all_secrets"
-          secret_username=$(echo $all_secrets | jq -r ".${secret_username_to_extract}")
-          echo "secret_username $secret_username"
+          secret_username=$(echo "$all_secrets" | jq -r ".${secret_username_to_extract}")
           if [ "null" = "${secret_username}" ] || [ -z "${secret_username}" ]; then
             echo "Secret ${secret_username_to_extract} not found !"
             echo "Please add secret ${secret_username_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
@@ -285,7 +283,7 @@ jobs:
           fi
           secret_token_to_extract=REPOSITORY_TOKEN_$(echo "$repo_url_target" | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')
           echo "Extracting github secret ${secret_token_to_extract}"
-          secret_token=$(echo $all_secrets | jq -r ".${secret_token_to_extract}")
+          secret_token=$(echo "$all_secrets" | jq -r ".${secret_token_to_extract}")
           if [ "null" = "${secret_token}" ] || [ -z "${secret_token}" ]; then
             echo "Secret ${secret_token_to_extract} not found !"
             echo "Please add secret ${secret_token_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
@@ -389,6 +387,4 @@ jobs:
                 -H "Content-Type: multipart/form-data" --data-binary \
                 "@${deb}" "${NEXUS_URL}/repository/${{ needs.repositories-preparation.outputs.apt-repo-name }}/"
             done
-
-
 

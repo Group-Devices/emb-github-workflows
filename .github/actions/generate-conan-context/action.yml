@@ -1,0 +1,174 @@
+name: "action-configure-conan"
+
+description: "Configure conan according to https://kubapay.atlassian.net/wiki/spaces/VOQA/pages/716079105/Development+workflow"
+
+inputs:
+  json-secrets:
+    description: "All secrets in json format"
+    required: true
+  override-branch-ref:
+    description: "The branch ref to use instead of actual GITHUB_REF"
+    required: false
+    default: ""
+
+outputs:
+  build-profile-list:
+    description: "The list of build profiles"
+    value: ${{ steps.generate-build-profiles-list.outputs.list }}
+  collectors-list:
+    description: "The list of collectors"
+    value: ${{ steps.generate-collectors-list.outputs.list }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Generate extract-conanfile-field.py
+      shell: bash
+      run: |
+        ## START GENERATE PYTHON SCRIPT
+        cat > extract-conanfile-field.py <<EOF
+
+        import importlib.util
+        import inspect
+        import sys
+
+        def load_class(module_name):
+          spec = importlib.util.find_spec(module_name)
+          if spec is None:
+            raise ImportError(f"Module '{module_name}' not found.")
+
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+
+          classes = inspect.getmembers(module, inspect.isclass)
+          for name, cls in inspect.getmembers(module, inspect.isclass):
+            if cls.__module__ == module_name:
+              return cls
+          raise RuntimeError(f"No conan class found matching '{module_name}'")
+
+        if __name__ == "__main__":
+          field_to_extract = sys.argv[1]
+          module_name = "conanfile"
+          conan_class = load_class(module_name)
+          conan_instance = conan_class()
+          try:
+            print(getattr(conan_instance, field_to_extract))
+          except Exception as e:
+            print("")
+        EOF
+        ## END GENERATE PYTHON SCRIPT
+
+    - name: Generate the conan context
+      id: generate-conan-context
+      shell: bash
+      run: |
+        echo "Search for bundle/user field in conanfile"
+        bundle=$(python3 extract-conanfile-field.py bundle)
+        if [ -z "$bundle" ] || [ "$bundle" = "None" ]; then
+          echo "Unable to find bundle field in conanfile !"
+          exit 1
+        fi
+        echo "Bundle found: $bundle"
+        if [ "$(echo "$bundle" | grep -c "/")" -ne "1" ]; then
+          echo "Bundle field in conanfile is not in the form of owner/bundle (ex: KUBA-EMB-CI/my-package) ! "
+          exit 1
+        fi
+
+        owner=$(echo "$bundle" | cut -d'/' -f1)
+        echo "Owner: $owner"
+
+        CONAN_CONTEXT_URL="https://api.github.com/repos/${bundle}/contents/conan-context.yml"
+
+        REF=""
+        BRANCH_NAME="${GITHUB_REF_NAME}"
+        OVERRIDE_BRANCH_REF="${{ inputs.override-branch-ref }}"
+        if [ -n "${OVERRIDE_BRANCH_REF}" ]; then
+          REF="${OVERRIDE_BRANCH_REF}"
+        elif [ "$BRANCH_NAME" = "main" ]; then
+          REF="main"
+        elif [[ "$BRANCH_NAME" == "release/"* ]]; then
+          REF="$BRANCH_NAME"
+        elif [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+          REF="${GITHUB_REF_NAME}"
+        elif [ -n "${GITHUB_BASE_REF}" ]; then
+          REF="${GITHUB_BASE_REF}"
+        else
+          echo "Unable to set conan channel"
+          exit 1
+        fi
+        echo "Set conan channel to $REF"
+
+        mkdir -p .conan-context
+
+        OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_$(echo "$owner" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+        all_secrets='${{ inputs.json-secrets }}'
+        OWNER_GIT_TOKEN=$(echo $all_secrets | jq -r ".${OWNER_GIT_TOKEN_SECRET}")
+        all_secrets=''
+
+        if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
+          echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
+          echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
+          exit 1
+        else
+          echo "Found secret ${OWNER_GIT_TOKEN_SECRET} that will be use to download conan context at ${CONAN_CONTEXT_URL}"
+        fi
+
+        echo "Will download conan context at: ${CONAN_CONTEXT_URL}?ref=${REF}"
+        curl --fail -H "Authorization: token ${OWNER_GIT_TOKEN}" \
+              -H "Accept: application/vnd.github.v3.raw" \
+              -L "${CONAN_CONTEXT_URL}?ref=${REF}" > "${CONAN_CONTEXT_PATH}"
+
+    - name: 'Detect presence of PC in build_boards_array'
+      shell: bash
+      run: |
+        build_boards_array=$(python3 extract-conanfile-field.py build_boards)
+        FIELD=".build_boards"
+        result=$(echo $build_boards_array | yq eval ". | type")
+        if [ "$result" = "!!seq" ]; then
+          jsonbord=$(echo $build_boards_array | yq -r "." -o=json | jq -c)
+          if [ -n "$jsonbord" ] && echo $jsonbord | jq -e '.[] | select(. == "PC")' > /dev/null; then
+            echo "PC is present in build_boards"
+            echo "APPEND_DEFAULT_PROFILE=true" >> "$GITHUB_ENV"
+          else
+            echo "PC is not present in build_boards"
+            echo "APPEND_DEFAULT_PROFILE=false" >> "$GITHUB_ENV"
+          fi
+        else
+          echo "Field $FIELD is not present in conanfile.py or is not an array"
+        fi
+
+    - name: 'Output the build profiles list'
+      id: generate-build-profiles-list
+      shell: bash
+      run: |
+        FIELD="build.profiles"
+        result=$(yq eval ".${FIELD} | type" "${CONAN_CONTEXT_PATH}")
+        if [ "$result" = "!!seq" ]; then
+          if [ -n "$APPEND_DEFAULT_PROFILE" ] && [ "$APPEND_DEFAULT_PROFILE" = "true" ]; then
+            echo "list=$(yq -r ".${FIELD}" "${CONAN_CONTEXT_PATH}" -o=json | jq -c "if index(\"default\") == null then . + [\"default\"] else . end")" >> "$GITHUB_OUTPUT"
+          else
+            echo "list=$(yq -r ".${FIELD}" "${CONAN_CONTEXT_PATH}" -o=json | jq -c)" >> "$GITHUB_OUTPUT"
+          fi
+        else
+          echo "File: ${CONAN_CONTEXT_PATH} - Field '$FIELD' does not exist or is not an array."
+          exit 1
+        fi
+
+    - name: 'Output the collectors list'
+      id: generate-collectors-list
+      shell: bash
+      run: |
+        FIELD="build.collectors"
+        result=$(yq eval ".${FIELD} | type" "${CONAN_CONTEXT_PATH}")
+        if [ "$result" = "!!seq" ]; then
+          echo "list=$(yq -r ".${FIELD}" "${CONAN_CONTEXT_PATH}" -o=json | jq -c)" >> "$GITHUB_OUTPUT"
+        else
+          echo "File: ${CONAN_CONTEXT_PATH} - Field '$FIELD' does not exist or is not an array."
+          exit 1
+        fi
+
+    - name: 'Upload conan context'
+      uses: actions/upload-artifact@v4
+      with:
+        name: conan-context
+        path: ${{ env.CONAN_CONTEXT_PATH }}
