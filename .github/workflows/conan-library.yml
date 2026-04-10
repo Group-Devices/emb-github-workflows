@@ -195,11 +195,13 @@ jobs:
         if: inputs.enabled-doxygen && matrix.profile == 'default'
         shell: bash
         run: |
-          mkdir -p docs/doxygen
-          cat > Doxyfile <<'EOF'
+          DOXYGEN_OUTPUT_DIR="$(mktemp -d)"
+          echo "SECRETARY_SDK_DOXYGEN_DIR=${DOXYGEN_OUTPUT_DIR}/html" >> "$GITHUB_ENV"
+          cat > Doxyfile <<EOF
           PROJECT_NAME="${{ github.event.repository.name }}"
           RECURSIVE=YES
-          HTML_OUTPUT=docs/doxygen
+          OUTPUT_DIRECTORY=${DOXYGEN_OUTPUT_DIR}
+          HTML_OUTPUT=html
           EOF
 
       - name: Build API docs
