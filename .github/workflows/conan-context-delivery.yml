@@ -633,11 +633,20 @@ jobs:
         run: |
           python3 -m pip install markdown json-schema-for-humans
 
+      - name: Download package metadata for docs link pinning
+        uses: actions/download-artifact@v4
+        with:
+          name: packages-release-default
+          path: ./docs_metadata
+
       - name: Build bundle docs site
         run: |
           python3 - <<'PYDOCS'
           from pathlib import Path
           import html
+          import json
+          import os
+          import re
           import shutil
           from json_schema_for_humans.generate import generate_from_filename
           from json_schema_for_humans.generation_configuration import GenerationConfiguration
@@ -646,6 +655,7 @@ jobs:
 
           source_root = Path('to_docs')
           output_root = Path('to_docs_site')
+          package_metadata_path = Path('docs_metadata/packages.json')
           if output_root.exists():
             shutil.rmtree(output_root)
           output_root.mkdir(parents=True, exist_ok=True)
@@ -659,6 +669,46 @@ jobs:
           def relative_back(path: Path) -> str:
             depth = len(path.relative_to(output_root).parts) - 1
             return '/'.join(['..'] * depth) or '.'
+
+          def normalize_repo_path(url: str) -> str | None:
+            if not url:
+              return None
+            url = url.strip()
+            if url.endswith('.git'):
+              url = url[:-4]
+            if url.startswith('git@github.com:'):
+              return url[len('git@github.com:'):]
+            for prefix in ('https://github.com/', 'http://github.com/'):
+              if url.startswith(prefix):
+                return url[len(prefix):]
+            return None
+
+          repo_revisions = {}
+          current_repo = os.environ.get('GITHUB_REPOSITORY')
+          current_sha = os.environ.get('GITHUB_SHA')
+          if current_repo and current_sha:
+            repo_revisions[current_repo] = current_sha
+
+          if package_metadata_path.is_file():
+            for entry in json.loads(package_metadata_path.read_text(encoding='utf-8')):
+              repo_path = normalize_repo_path(entry.get('url', ''))
+              sha = entry.get('sha')
+              if repo_path and sha:
+                repo_revisions[repo_path] = sha
+
+          github_link_pattern = re.compile(
+            r'https://github\.com/(?P<repo>[^/\s]+/[^/\s]+)/(?P<kind>blob|tree)/main/(?P<path>[^\s)]+)'
+          )
+
+          def pin_github_links(markdown_text: str) -> str:
+            def replace(match):
+              repo_path = match.group('repo')
+              sha = repo_revisions.get(repo_path)
+              if not sha:
+                return match.group(0)
+              return f'https://github.com/{repo_path}/{match.group("kind")}/{sha}/{match.group("path")}'
+
+            return github_link_pattern.sub(replace, markdown_text)
 
           page_style = textwrap.dedent('''\
             <style>
@@ -806,6 +856,7 @@ jobs:
                   continue
                 if src.suffix.lower() == '.md':
                   markdown_text = src.read_text(encoding='utf-8')
+                  markdown_text = pin_github_links(markdown_text)
                   title = read_title(markdown_text, src.stem.replace('-', ' ').title())
                   html_body = markdown.markdown(markdown_text, extensions=['extra', 'tables', 'toc'])
                   html_path = dst.with_suffix('.html')
