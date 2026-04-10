@@ -208,7 +208,8 @@ jobs:
 
             if [ "${{ matrix.profile }}" != "default" ]; then
               unset SECRETARY_SDK_DOXYGEN_DIR
-              return 1
+              echo "Skip Doxygen docs for profile ${{ matrix.profile }}"
+              return 0
             fi
 
             ensure_doxygen_toolchain
