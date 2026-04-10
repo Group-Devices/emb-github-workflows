@@ -10,8 +10,8 @@ from json_schema_for_humans.generation_configuration import GenerationConfigurat
 import markdown
 
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-TEMPLATES_DIR = SCRIPT_DIR.parent / "templates"
+ACTION_DIR = Path(__file__).resolve().parent
+TEMPLATES_DIR = ACTION_DIR / "templates"
 SOURCE_ROOT = Path("to_docs")
 OUTPUT_ROOT = Path("to_docs_site")
 PACKAGE_METADATA_PATH = Path("docs_metadata/packages.json")

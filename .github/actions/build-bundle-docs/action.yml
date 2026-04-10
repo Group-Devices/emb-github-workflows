@@ -1,0 +1,10 @@
+name: Build bundle docs site
+description: Generate the static bundle documentation site from packaged docs.
+
+runs:
+  using: composite
+  steps:
+    - name: Build bundle docs site
+      shell: bash
+      run: |
+        python3 "${{ github.action_path }}/build_bundle_docs.py"

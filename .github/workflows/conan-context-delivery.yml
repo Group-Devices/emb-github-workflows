@@ -632,8 +632,7 @@ jobs:
           path: ./docs_metadata
 
       - name: Build bundle docs site
-        run: |
-          python3 .github/scripts/build_bundle_docs.py
+        uses: Group-Devices/emb-github-workflows/.github/actions/build-bundle-docs@main
       - name: Upload bundle docs site
         uses: actions/upload-artifact@v6
         with:
