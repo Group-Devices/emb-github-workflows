@@ -631,8 +631,18 @@ jobs:
           name: packages-release-default
           path: ./docs_metadata
 
+      - name: Checkout workflow helpers
+        uses: actions/checkout@v6
+        with:
+          repository: Group-Devices/emb-github-workflows
+          ref: main
+          path: .workflow_helpers
+          sparse-checkout: |
+            .github/actions/build-bundle-docs
+
       - name: Build bundle docs site
-        uses: Group-Devices/emb-github-workflows/.github/actions/build-bundle-docs@main
+        run: |
+          python3 .workflow_helpers/.github/actions/build-bundle-docs/build_bundle_docs.py
       - name: Upload bundle docs site
         uses: actions/upload-artifact@v6
         with:
