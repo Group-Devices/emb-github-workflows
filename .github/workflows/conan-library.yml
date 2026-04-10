@@ -147,7 +147,12 @@ jobs:
       - run: echo "Will run a SonarQube analysis"
   build-and-upload:
     runs-on: ${{ startsWith(github.event.repository.name, 'qt') && 'eks-runner-linux-x64-large' || 'eks-runner-linux-x64-medium' }}
-    if: always() && (inputs.conan-profiles != '' || !inputs.run-unit-tests  || ( inputs.run-unit-tests &&  needs.unit-tests.result == 'success') )
+    if: >-
+      always() && (
+        inputs.conan-profiles != '' ||
+        !inputs.run-unit-tests ||
+        needs.unit-tests.result == 'success'
+      )
     needs:
       - generate-conan-context
       - unit-tests
@@ -168,46 +173,44 @@ jobs:
         run: |
           repo=$(basename ${{ github.repository }})
           git config --global --add safe.directory "/__w/${repo}/${repo}"
-      - name: Get conan context from previous step
-        uses: actions/download-artifact@v4
+      - name: Prepare Conan context
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.conan-context }}" ]; then
+            mkdir -p .conan-context
+            printf '%s\n' "${{ inputs.conan-context }}" > .conan-context/conan-context.yml
+          else
+            mkdir -p .conan-context
+          fi
+
+      - name: Download Conan context artifact
         if: inputs.conan-context == ''
+        uses: actions/download-artifact@v4
         with:
           name: conan-context
           path: .conan-context
-      - name: Get conan context from input
-        if: inputs.conan-context != ''
-        run: |
-          mkdir -p .conan-context
-          touch .conan-context/conan-context.yml
-          echo "${{ inputs.conan-context }}" > .conan-context/conan-context.yml
       - name: Configure Conan
         uses: KUBA-EMB-CI/action-configure-conan@main
         with:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
-      - name: Install documentation tools
+      - name: Build package Doxygen docs
         if: inputs.enabled-doxygen && matrix.profile == 'default'
+        shell: bash
         run: |
           apt-get update
           apt-get install -y doxygen python3-pip
 
-      - name: Generate Doxyfile
-        if: inputs.enabled-doxygen && matrix.profile == 'default'
-        shell: bash
-        run: |
-          DOXYGEN_OUTPUT_DIR="$(mktemp -d)"
-          echo "SECRETARY_SDK_DOXYGEN_DIR=${DOXYGEN_OUTPUT_DIR}/html" >> "$GITHUB_ENV"
+          doxygen_output_dir="$(mktemp -d)"
+          echo "SECRETARY_SDK_DOXYGEN_DIR=${doxygen_output_dir}/html" >> "$GITHUB_ENV"
+
           cat > Doxyfile <<EOF
           PROJECT_NAME="${{ github.event.repository.name }}"
           RECURSIVE=YES
-          OUTPUT_DIRECTORY=${DOXYGEN_OUTPUT_DIR}
+          OUTPUT_DIRECTORY=${doxygen_output_dir}
           HTML_OUTPUT=html
           EOF
 
-      - name: Build API docs
-        if: inputs.enabled-doxygen && matrix.profile == 'default'
-        shell: bash
-        run: |
           doxygen Doxyfile
 
       - name: Conan create
