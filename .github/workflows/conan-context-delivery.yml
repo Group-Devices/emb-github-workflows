@@ -613,14 +613,14 @@ jobs:
 
       - name: Collect docs delivery
         run: |
-          requires=()
+          set --
           yq -r ".build.collectors[]" ./conan-context.yml > tmp_input
           while read -r collector ; do
             collector=${collector#*/}
-            requires+=("--requires=${collector}/[*]")
+            set -- "$@" "--requires=${collector}/[*]"
           done < tmp_input
-          printf 'collector requires %s\n' "${requires[*]}"
-          ${{ env.CONAN }} install "${requires[@]}" -pr:h default --deployer docs --deployer-folder=to_docs
+          printf 'collector requires %s\n' "$*"
+          ${{ env.CONAN }} install "$@" -pr:h default --deployer docs --deployer-folder=to_docs
 
       - name: Install docs generator tools
         run: |
