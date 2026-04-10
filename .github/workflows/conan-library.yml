@@ -191,42 +191,7 @@ jobs:
           conanfile_flag_true() {
             package_dir="$1"
             field_name="$2"
-            python3 - "$package_dir" "$field_name" <<'PY'
-            import importlib.util
-            import inspect
-            import pathlib
-            import sys
-
-            package_dir = pathlib.Path(sys.argv[1]).resolve()
-            field_name = sys.argv[2]
-            conanfile_path = package_dir / "conanfile.py"
-            module_name = "codex_conanfile"
-
-            spec = importlib.util.spec_from_file_location(module_name, conanfile_path)
-            if spec is None or spec.loader is None:
-                print("false")
-                raise SystemExit(0)
-
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-
-            conan_class = None
-            for _, cls in inspect.getmembers(module, inspect.isclass):
-                if cls.__module__ == module_name:
-                    conan_class = cls
-                    break
-
-            if conan_class is None:
-                print("false")
-                raise SystemExit(0)
-
-            try:
-                value = getattr(conan_class(), field_name)
-            except Exception:
-                value = getattr(conan_class, field_name, False)
-
-            print("true" if value is True else "false")
-            PY
+            python3 -c 'import importlib.util, inspect, pathlib, sys; package_dir = pathlib.Path(sys.argv[1]).resolve(); field_name = sys.argv[2]; conanfile_path = package_dir / "conanfile.py"; module_name = "codex_conanfile"; spec = importlib.util.spec_from_file_location(module_name, conanfile_path); module = None if spec is None or spec.loader is None else importlib.util.module_from_spec(spec); spec.loader.exec_module(module) if module is not None else None; conan_class = None if module is None else next((cls for _, cls in inspect.getmembers(module, inspect.isclass) if cls.__module__ == module_name), None); value = False if conan_class is None else getattr(conan_class, field_name, False); print("true" if value is True else "false")' "$package_dir" "$field_name"
           }
 
           ensure_doxygen_toolchain() {
@@ -250,12 +215,12 @@ jobs:
             doxygen_output_dir="$(mktemp -d)"
             export SECRETARY_SDK_DOXYGEN_DIR="${doxygen_output_dir}/html"
 
-            cat > "${package_dir}/Doxyfile" <<EOF
-            PROJECT_NAME="${project_name}"
-            RECURSIVE=YES
-            OUTPUT_DIRECTORY=${doxygen_output_dir}
-            HTML_OUTPUT=html
-            EOF
+            printf '%s\n' \
+              "PROJECT_NAME=\"${project_name}\"" \
+              "RECURSIVE=YES" \
+              "OUTPUT_DIRECTORY=${doxygen_output_dir}" \
+              "HTML_OUTPUT=html" \
+              > "${package_dir}/Doxyfile"
             doxygen "${package_dir}/Doxyfile"
             rm -f "${package_dir}/Doxyfile"
             return 0
