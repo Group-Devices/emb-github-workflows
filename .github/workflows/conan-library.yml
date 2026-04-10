@@ -304,22 +304,10 @@ jobs:
           echo "OWNER=${owner}" >> "$GITHUB_ENV"
 
       - name: Extract authentication token for ${{ env.OWNER }}
-        run: |
-          OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
-          # shellcheck disable=SC2086
-          all_secrets='${{ tojson(secrets) }}'
-          OWNER_GIT_TOKEN=$(echo "$all_secrets" | jq -r ".${OWNER_GIT_TOKEN_SECRET}")
-          all_secrets=''
-          if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
-            echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
-            echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
-            exit 1
-          else
-            echo "Found secret ${OWNER_GIT_TOKEN_SECRET} that will be use to trigger rebuild of ${{ matrix.collector }}"
-          fi
-          echo "${OWNER_GIT_TOKEN}" > mytoken.txt
-          gh auth login --with-token < mytoken.txt
-          rm mytoken.txt
+        uses: ./.github/actions/gh-auth-owner
+        with:
+          owner: ${{ env.OWNER }}
+          json-secrets: ${{ toJson(secrets) }}
 
       - name: Check if repository ${{ matrix.collector }} exists
         run: |
@@ -341,8 +329,7 @@ jobs:
 
       - name: Check if workflow ${{ env.TARGET_WORKFLOW }} exists in ${{ matrix.collector }}/${{ github.ref_name }}
         run: |
-          wkf_exists=$(gh api repos/${{ matrix.collector }}/actions/workflows --jq ".workflows | map(select(.path == \".github/workflows/${TARGET_WORKFLOW}\")) | length > 0")
-          if [ "$wkf_exists" == "true" ]; then
+          if gh api repos/${{ matrix.collector }}/contents/.github/workflows/${{ env.TARGET_WORKFLOW }}?ref=${{ github.ref_name }} --silent > /dev/null; then
             echo "Workflow ${TARGET_WORKFLOW} exists in ${{ matrix.collector }}."
           else
             echo "Workflow ${TARGET_WORKFLOW} does not exists in ${{ matrix.collector }}."
@@ -369,27 +356,18 @@ jobs:
           name: conan-context
           path: .conan-context
 
-      - name: Extract authentication token
+      - name: Extract context owner
         run: |
           context=$(yq e '.bundle' "${CONAN_CONTEXT_PATH}")
           echo "Context: ${context}"
           OWNER=$(echo "${context}" | cut -d'/' -f1)
           echo "Owner: ${OWNER}"
-          OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
-          # shellcheck disable=SC2086
-          all_secrets='${{ tojson(secrets) }}'
-          OWNER_GIT_TOKEN=$(echo "$all_secrets" | jq -r ".${OWNER_GIT_TOKEN_SECRET}")
-          all_secrets=''
-          if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
-            echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
-            echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
-            exit 1
-          else
-            echo "Found secret ${OWNER_GIT_TOKEN_SECRET} that will be use to trigger delivery of ${context}"
-          fi
-          echo "${OWNER_GIT_TOKEN}" > mytoken.txt
-          gh auth login --with-token < mytoken.txt
-          rm mytoken.txt
+          echo "OWNER=${OWNER}" >> "$GITHUB_ENV"
+      - name: Extract authentication token
+        uses: ./.github/actions/gh-auth-owner
+        with:
+          owner: ${{ env.OWNER }}
+          json-secrets: ${{ toJson(secrets) }}
       - name: Call context delivery  
         run: |  
           context=$(yq e '.bundle' "${CONAN_CONTEXT_PATH}")

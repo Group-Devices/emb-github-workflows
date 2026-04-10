@@ -398,7 +398,7 @@ jobs:
         uses: KUBA-EMB-CI/action-configure-conan@main
         with:
           json-secrets: ${{ toJson(secrets) }}
-          conan-context-path: ${CONAN_CONTEXT_PATH}
+          conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
 
       - name: Add original repository in configuration
         run: |
@@ -408,9 +408,7 @@ jobs:
           secret_username_to_extract=REPOSITORY_USERNAME_$(echo "$repo_url_target" | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')
           echo "Extracting github secret ${secret_username_to_extract}"
           all_secrets='${{ tojson(secrets) }}'
-          echo "all secrest $all_secrets"
-          secret_username=$(echo $all_secrets | jq -r ".${secret_username_to_extract}")
-          echo "secret_username $secret_username"
+          secret_username=$(echo "$all_secrets" | jq -r ".${secret_username_to_extract}")
           if [ "null" = "${secret_username}" ] || [ -z "${secret_username}" ]; then
             echo "Secret ${secret_username_to_extract} not found !"
             echo "Please add secret ${secret_username_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
@@ -418,7 +416,7 @@ jobs:
           fi
           secret_token_to_extract=REPOSITORY_TOKEN_$(echo "$repo_url_target" | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')
           echo "Extracting github secret ${secret_token_to_extract}"
-          secret_token=$(echo $all_secrets | jq -r ".${secret_token_to_extract}")
+          secret_token=$(echo "$all_secrets" | jq -r ".${secret_token_to_extract}")
           if [ "null" = "${secret_token}" ] || [ -z "${secret_token}" ]; then
             echo "Secret ${secret_token_to_extract} not found !"
             echo "Please add secret ${secret_token_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
@@ -430,21 +428,17 @@ jobs:
 
       - name: Generate dependencies for arch ${{ matrix.profile }}
         run: |
-          requires=""
-          sep=""
+          set --
           yq -r ".build.collectors[]" ./conan-context.yml > tmp_input
           while read -r collector ; do
-            collector=${collector#*/};
-            requires="${requires}${sep}--requires=${collector}/[*]";
-            sep=" "
-          done < tmp_input;
-          echo "collector requires ${requires}"
+            collector=${collector#*/}
+            set -- "$@" "--requires=${collector}/[*]"
+          done < tmp_input
+          printf 'collector requires %s\n' "$*"
           ${{ env.CONAN }} remote disable "${{ needs.extract-collectors.outputs.conan_release_remote_name}}"
-          # shellcheck disable=SC2086
-          ${{ env.CONAN }} install ${requires} -pr:h "${{ matrix.profile }}" --deployer release --deployer-folder=to_conan
+          ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer release --deployer-folder=to_conan
           if [ "${{needs.extract-collectors.outputs.deliverable}}" = 'true' ]; then
-            # shellcheck disable=SC2086
-            ${{ env.CONAN }} install ${requires} -pr:h "${{ matrix.profile }}" --deployer delivery --deployer-folder=to_apt
+            ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer delivery --deployer-folder=to_apt
           fi
           ${{ env.CONAN }} remote enable "${{ needs.extract-collectors.outputs.conan_release_remote_name}}"
 
@@ -500,13 +494,11 @@ jobs:
                 prev_sha=$(jq -r -c ".object.sha" ./getref.json)
                 if [ "${prev_sha}" != "${sha}" ]; then
                   echo "Changed branch from ${prev_sha} to ${sha}"
-                  gh api --method POST \
+                  gh api --method PATCH \
                     -H 'Accept: application/vnd.github+json' \
                     -H 'X-GitHub-Api-Version: 2022-11-28' \
-                    "/repos/${URL_REL}/git/refs" \
-                    -f "ref=refs/heads/release/${DELIVERY_NAME}" \
+                    "/repos/${URL_REL}/git/refs/heads/release/${DELIVERY_NAME}" \
                     -f "sha=${sha}"
-                  : # curl --fail -X PATCH -H "Authorization: token ${OWNER_GIT_TOKEN}" -d  "{\"sha\": \"$sha\"}" "https://api.github.com/repos/$URL_REL/git/refs/heads/release/${DELIVERY_NAME}"
                 fi
               else
                 echo "Branch release/${DELIVERY_NAME} not found in ${URL_REL}, create it now with sha=${sha}"
@@ -989,30 +981,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      - name: Authenticate gh for current repository owner
+        uses: ./.github/actions/gh-auth-owner
+        with:
+          owner: ${{ github.repository_owner }}
+          json-secrets: ${{ toJson(secrets) }}
+          token-prefix: GIT_TOKEN_RELEASE
+
       - name: remove clone request if any
         id: finalize
         run: |
               echo "Clone successfully done, removing clone request"
               DELIVERY_NAME=${{ needs.preflight-checks.outputs.delivery-name }}
-
-              : # Authenticate on current git repos
-              OWNER=$(echo "${GITHUB_REPOSITORY}" | cut -d'/' -f1)
-              echo "owner ${OWNER}"
-              OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_RELEASE_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
-              # shellcheck disable=SC2086
-              all_secrets='${{ tojson(secrets) }}'
-              OWNER_GIT_TOKEN=$(echo "$all_secrets" | jq -r ".${OWNER_GIT_TOKEN_SECRET}")
-              all_secrets=''
-              if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
-                echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
-                echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
-                exit 1
-              else
-                echo "Found secret ${OWNER_GIT_TOKEN_SECRET}"
-              fi
-              echo "${OWNER_GIT_TOKEN}" > mytoken.txt
-              gh auth login --with-token < mytoken.txt
-              rm mytoken.txt
 
               : # get current sha of the file
               URL="/repos/${GITHUB_REPOSITORY}/contents/clone.yml"
@@ -1060,22 +1040,10 @@ jobs:
           echo "OWNER=${owner}" >> "$GITHUB_ENV"
 
       - name: Extract authentication token for ${{ env.OWNER }}
-        run: |
-          OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
-          # shellcheck disable=SC2086
-          all_secrets='${{ tojson(secrets) }}'
-          OWNER_GIT_TOKEN=$(echo "$all_secrets" | jq -r ".${OWNER_GIT_TOKEN_SECRET}")
-          all_secrets=''
-          if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
-            echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
-            echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
-            exit 1
-          else
-            echo "Found secret ${OWNER_GIT_TOKEN_SECRET} that will be use to trigger rebuild of ${{ matrix.collector }}"
-          fi
-          echo "${OWNER_GIT_TOKEN}" > mytoken.txt
-          gh auth login --with-token < mytoken.txt
-          rm mytoken.txt
+        uses: ./.github/actions/gh-auth-owner
+        with:
+          owner: ${{ env.OWNER }}
+          json-secrets: ${{ toJson(secrets) }}
 
       - name: Check if repository ${{ matrix.collector }} exists
         run: |

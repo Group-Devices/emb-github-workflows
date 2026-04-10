@@ -1,0 +1,53 @@
+name: Authenticate GitHub Owner
+description: Resolve an owner-scoped GitHub token from secrets JSON and authenticate gh.
+
+inputs:
+  owner:
+    description: GitHub owner or organization name.
+    required: true
+  json-secrets:
+    description: Serialized GitHub secrets object.
+    required: true
+  token-prefix:
+    description: Prefix used to build the secret name before the normalized owner.
+    required: false
+    default: GIT_TOKEN
+  help-owner:
+    description: Owner shown in the missing-secret help message.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Authenticate gh for owner
+      shell: bash
+      run: |
+        owner='${{ inputs.owner }}'
+        all_secrets='${{ inputs.json-secrets }}'
+        token_prefix='${{ inputs.token-prefix }}'
+        help_owner='${{ inputs.help-owner }}'
+
+        if [ -z "${owner}" ]; then
+          echo "Input 'owner' is required"
+          exit 1
+        fi
+
+        if [ -z "${help_owner}" ]; then
+          help_owner="${GITHUB_REPOSITORY_OWNER}"
+        fi
+
+        token_secret_name="${token_prefix}_$(echo "${owner}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')"
+        echo "Looking for matching GitHub secret ${token_secret_name}"
+        owner_git_token=$(echo "$all_secrets" | jq -r ".${token_secret_name}")
+        if [ -z "${owner_git_token}" ] || [ "${owner_git_token}" = "null" ]; then
+          echo "Secret ${token_secret_name} not found !"
+          echo "Please add secret ${token_secret_name} to https://github.com/organizations/${help_owner}/settings/secrets/actions"
+          exit 1
+        fi
+
+        echo "::add-mask::${owner_git_token}"
+        token_file=$(mktemp)
+        trap 'rm -f "${token_file}"' EXIT
+        printf '%s\n' "${owner_git_token}" > "${token_file}"
+        gh auth login --with-token < "${token_file}"
