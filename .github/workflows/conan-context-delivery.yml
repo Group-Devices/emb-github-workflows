@@ -697,7 +697,7 @@ jobs:
                 repo_revisions[repo_path] = sha
 
           github_link_pattern = re.compile(
-            r'https://github\.com/(?P<repo>[^/\s]+/[^/\s]+)/(?P<kind>blob|tree)/main/(?P<path>[^\s)]+)'
+            r'https://github\.com/(?P<repo>[^/\s]+/[^/\s]+)/(?P<kind>blob|tree)/(?P<ref>main|release/[^/\s]+)/(?P<path>[^\s)]+)'
           )
 
           def pin_github_links(markdown_text: str) -> str:
