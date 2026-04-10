@@ -183,29 +183,84 @@ jobs:
         with:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
-      - name: Build package Doxygen docs
-        if: inputs.enabled-doxygen && matrix.profile == 'default'
-        shell: bash
-        run: |
-          apt-get update
-          apt-get install -y doxygen python3-pip
-
-          doxygen_output_dir="$(mktemp -d)"
-          echo "SECRETARY_SDK_DOXYGEN_DIR=${doxygen_output_dir}/html" >> "$GITHUB_ENV"
-
-          cat > Doxyfile <<EOF
-          PROJECT_NAME="${{ github.event.repository.name }}"
-          RECURSIVE=YES
-          OUTPUT_DIRECTORY=${doxygen_output_dir}
-          HTML_OUTPUT=html
-          EOF
-
-          doxygen Doxyfile
-
       - name: Conan create
         shell: bash
         run: |
           set -o pipefail
+
+          conanfile_flag_true() {
+            package_dir="$1"
+            field_name="$2"
+            python3 - "$package_dir" "$field_name" <<'PY'
+import importlib.util
+import inspect
+import pathlib
+import sys
+
+package_dir = pathlib.Path(sys.argv[1]).resolve()
+field_name = sys.argv[2]
+conanfile_path = package_dir / "conanfile.py"
+module_name = "codex_conanfile"
+
+spec = importlib.util.spec_from_file_location(module_name, conanfile_path)
+if spec is None or spec.loader is None:
+    print("false")
+    raise SystemExit(0)
+
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+conan_class = None
+for _, cls in inspect.getmembers(module, inspect.isclass):
+    if cls.__module__ == module_name:
+        conan_class = cls
+        break
+
+if conan_class is None:
+    print("false")
+    raise SystemExit(0)
+
+try:
+    value = getattr(conan_class(), field_name)
+except Exception:
+    value = getattr(conan_class, field_name, False)
+
+print("true" if value is True else "false")
+PY
+          }
+
+          ensure_doxygen_toolchain() {
+            if [ "${DOXYGEN_TOOLCHAIN_READY:-false}" != "true" ]; then
+              apt-get update
+              apt-get install -y doxygen python3-pip
+              DOXYGEN_TOOLCHAIN_READY=true
+            fi
+          }
+
+          prepare_doxygen_docs() {
+            package_dir="$1"
+            project_name="$2"
+
+            if [ "${{ matrix.profile }}" != "default" ]; then
+              unset SECRETARY_SDK_DOXYGEN_DIR
+              return 1
+            fi
+
+            ensure_doxygen_toolchain
+            doxygen_output_dir="$(mktemp -d)"
+            export SECRETARY_SDK_DOXYGEN_DIR="${doxygen_output_dir}/html"
+
+            cat > "${package_dir}/Doxyfile" <<EOF
+PROJECT_NAME="${project_name}"
+RECURSIVE=YES
+OUTPUT_DIRECTORY=${doxygen_output_dir}
+HTML_OUTPUT=html
+EOF
+            doxygen "${package_dir}/Doxyfile"
+            rm -f "${package_dir}/Doxyfile"
+            return 0
+          }
+
           upload=$(yq e '.upload' "${CONAN_CONTEXT_PATH}")
           if [ -z "${upload}" ] || [ "null" = "${upload}" ]; then
             echo "Field upload is missing in ${CONAN_CONTEXT_PATH}"
@@ -263,6 +318,13 @@ jobs:
               echo "Ripple building ${name} from version ${version} build ${build} ...."
               cd "${name}"
               git reset --hard "$sha"
+              unset SECRETARY_SDK_DOXYGEN_DIR
+              if [ "$(conanfile_flag_true "." enabled_doxygen)" = "true" ]; then
+                echo "Package ${name} enables Doxygen docs"
+                prepare_doxygen_docs "." "${name}"
+              else
+                echo "Package ${name} does not enable Doxygen docs"
+              fi
               # Following command must exit if conan create fail because we've set on top of this script 'set -o pipefail'
               # Please do not add any command behind '| tee conan_create.log' that could change the return code
               PREVIOUS_VERSION="${version}+${build}" conan create . -pr:h "${{ matrix.profile }}" 2>&1 | tee conan_create.log
@@ -272,6 +334,13 @@ jobs:
               fi  
             done
           fi  
+          unset SECRETARY_SDK_DOXYGEN_DIR
+          if [ "${{ inputs.enabled-doxygen }}" = "true" ] || [ "$(conanfile_flag_true "." enabled_doxygen)" = "true" ]; then
+            echo "Current package ${repo} enables Doxygen docs"
+            prepare_doxygen_docs "." "${repo}"
+          else
+            echo "Current package ${repo} does not enable Doxygen docs"
+          fi
           conan create . -pr:h "${{ matrix.profile }}" 2>&1 | tee conan_create.log
           if [ ${{ github.event_name }} != 'pull_request' ]; then
             conan upload -r "${upload}" "${repo}" --confirm
