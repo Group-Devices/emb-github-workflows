@@ -453,6 +453,10 @@ jobs:
         run: |
           DELIVERY_NAME=${{ needs.preflight-checks.outputs.delivery-name }}
           echo "Start upload release packages"
+          AUTHENTICATED_OWNER=""
+          OWNER_GIT_TOKEN=""
+          # shellcheck disable=SC2086
+          all_secrets='${{ tojson(secrets) }}'
           jq -c '.[] ' ./to_conan/packages.json | while read -r repository ; do \
             package=$(echo "$repository" | jq -r .name)
             version=$(echo "$repository" | jq -r .version)
@@ -466,23 +470,25 @@ jobs:
             # suppress .git if any
             URL_REL=${URL_REL%.*}
             OWNER=$(echo "${URL_REL}" | cut -d'/' -f1)
-            echo "Extracting github token secret for org ${OWNER}"
-            OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_RELEASE_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
-            echo "Looking for matching github secret ${OWNER_GIT_TOKEN_SECRET}"
-            # shellcheck disable=SC2086
-            all_secrets='${{ tojson(secrets) }}'
-            OWNER_GIT_TOKEN=$(echo "$all_secrets" | jq -r ".${OWNER_GIT_TOKEN_SECRET}")
-            all_secrets=''
-            if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
-              echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
-              echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
-              exit 1
+            if [ "${AUTHENTICATED_OWNER}" != "${OWNER}" ]; then
+              echo "Extracting github token secret for org ${OWNER}"
+              OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_RELEASE_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+              echo "Looking for matching github secret ${OWNER_GIT_TOKEN_SECRET}"
+              OWNER_GIT_TOKEN=$(echo "$all_secrets" | jq -r ".${OWNER_GIT_TOKEN_SECRET}")
+              if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
+                echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
+                echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
+                exit 1
+              else
+                echo "Found secret ${OWNER_GIT_TOKEN_SECRET}"
+              fi
+              echo "${OWNER_GIT_TOKEN}" > mytoken.txt
+              gh auth login --with-token < mytoken.txt
+              rm mytoken.txt
+              AUTHENTICATED_OWNER="${OWNER}"
             else
-              echo "Found secret ${OWNER_GIT_TOKEN_SECRET}"
+              echo "GitHub owner ${OWNER} already authenticated, reusing existing gh session"
             fi
-            echo "${OWNER_GIT_TOKEN}" > mytoken.txt
-            gh auth login --with-token < mytoken.txt
-            rm mytoken.txt
 
             if [ "${{ needs.extract-collectors.outputs.from_repository_url}}" != "${{ needs.extract-collectors.outputs.conan_release_remote_url}}" ]; then
               : # ---------- BRANCH ---------------------------------------
@@ -556,6 +562,7 @@ jobs:
               fi
             fi
           done
+          all_secrets=''
 
       - name: Upload apt delivery
         if: needs.extract-collectors.outputs.deliverable == 'true'
