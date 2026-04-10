@@ -622,10 +622,7 @@ jobs:
             sep=" "
           done < tmp_input
           echo "collector requires ${requires}"
-          ${{ env.CONAN }} remote disable "${{ needs.extract-collectors.outputs.conan_release_remote_name }}"
-          # shellcheck disable=SC2086
           ${{ env.CONAN }} install ${requires} -pr:h default --deployer docs --deployer-folder=to_docs
-          ${{ env.CONAN }} remote enable "${{ needs.extract-collectors.outputs.conan_release_remote_name }}"
 
       - name: Install docs generator tools
         run: |

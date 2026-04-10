@@ -104,37 +104,26 @@ jobs:
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
 
       - run: bash test.sh
-      - name: Extract test report
-      # need to have a test report even if the previous step fails 
-        if: success() || failure()
-        run: |
-          mkdir -p 'ci-report'
-          if [ -e coverage/junit-results.xml ]; then
-              cp -v 'coverage/junit-results.xml' 'ci-report'
-          fi 
-          if [ -e coverage/coverage.info ]; then
-              cp -v 'coverage/coverage.info' 'ci-report'
-          fi
       - name: run logs if fail
         if: failure()
-        run: 
+        run: |
           cat coverage/Testing/Temporary/LastTest*
-          
+
       - name: Publish Test Results
         uses: EnricoMi/publish-unit-test-result-action/linux@v2
-        if: (!cancelled())
+        if: ${{ !cancelled() && hashFiles('coverage/junit-results.xml') != '' }}
         with:
-          files: |
-            ci-report/junit-results.xml
+          files: coverage/junit-results.xml
 
       - name: Report code coverage
+        if: ${{ !cancelled() && hashFiles('coverage/coverage.info') != '' }}
         uses: zgosalvez/github-actions-report-lcov@v4
         with:
-          coverage-files: ci-report/*.info
+          coverage-files: coverage/coverage.info
           minimum-coverage: 0
           github-token: ${{ secrets.GITHUB_TOKEN }}
           artifact-name: code-coverage-report
-          update-comment: true            
+          update-comment: true
           
   quality-analysis:
     runs-on: eks-runner-linux-x64-medium
