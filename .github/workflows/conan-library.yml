@@ -244,13 +244,6 @@ jobs:
               echo "Ripple building ${name} from version ${version} build ${build} ...."
               cd "${name}"
               git reset --hard "$sha"
-              unset SECRETARY_SDK_DOXYGEN_DIR
-              if [ "$(conanfile_flag_true "." enabled_doxygen)" = "true" ]; then
-                echo "Package ${name} enables Doxygen docs"
-                prepare_doxygen_docs "." "${name}"
-              else
-                echo "Package ${name} does not enable Doxygen docs"
-              fi
               # Following command must exit if conan create fail because we've set on top of this script 'set -o pipefail'
               # Please do not add any command behind '| tee conan_create.log' that could change the return code
               PREVIOUS_VERSION="${version}+${build}" conan create . -pr:h "${{ matrix.profile }}" 2>&1 | tee conan_create.log
