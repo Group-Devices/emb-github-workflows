@@ -204,7 +204,7 @@ jobs:
           LOCK_NAME=lock-${SOURCE_KEY}-${PROFILE_HASH}.json
           if [ -z "${{ inputs.source_package_key }}" ] || ! gh run download-artifact "$LOCK_NAME"; then
             echo "Creating lockfile locally"
-            conan lock create . --profile=${{ matrix.profile }} --lockfile=conan-lockfile.json
+            conan lock create . --profile=${{ matrix.profile }} --lockfile-out=conan-lockfile.json
           else
             cp "$LOCK_NAME" conan-lockfile.json
           fi
