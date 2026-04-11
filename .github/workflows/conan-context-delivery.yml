@@ -626,7 +626,7 @@ jobs:
             set -- "$@" "--requires=${collector}/[*]"
           done < tmp_input
           printf 'collector requires %s\n' "$*"
-          ${{ env.CONAN }} install "$@" -pr:h default --deployer docs --deployer-folder=to_docs --lock-file=conan-lock-default
+          ${{ env.CONAN }} install "$@" -pr:h default --deployer docs --deployer-folder=to_docs --lockfile=conan-lock-default
 
       - name: Install docs generator tools
         run: |
