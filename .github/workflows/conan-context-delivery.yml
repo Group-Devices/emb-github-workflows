@@ -18,6 +18,9 @@ on:
         required: false
         type: boolean
         default: false
+     source_package_key:
+        required: false
+        type: string
 
 env:
   CONAN_CONTEXT_PATH: conan-context.yml
@@ -400,6 +403,36 @@ jobs:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
 
+      - name: Compute profile hash
+        run: |
+          if [ -z "${{ inputs.source_package_key }}" ]; then
+            SOURCE_KEY="no_source"
+          else
+            SOURCE_KEY="${{ inputs.source_package_key }}"
+          fi
+          PROFILE_HASH=${{ matrix.profile }}
+          echo "PROFILE_HASH=$PROFILE_HASH" >> $GITHUB_ENV
+          echo "SOURCE_KEY=$SOURCE_KEY" >> $GITHUB_ENV
+
+      - name: Restore or create lockfile
+        run: |
+          LOCK_NAME=lock-${SOURCE_KEY}-${PROFILE_HASH}.json
+          if [ -z "${{ inputs.source_package_key }}" ] || ! gh run download-artifact $LOCK_NAME; then
+            echo "Creating lockfile locally"
+            conan lock create . --profile=${{ matrix.profile }} --lockfile=conan-lockfile.json
+          else
+            cp $LOCK_NAME conan-lockfile.json
+          fi
+
+      - name: Restore Conan cache (optional)
+        run: |
+          CACHE_NAME=cache-${SOURCE_KEY}-${PROFILE_HASH}.tar.gz
+          if [ -n "${{ inputs.source_package_key }}" ] && gh run download-artifact $CACHE_NAME; then
+            tar -xzf $CACHE_NAME -C ~
+          else
+            echo "Cache not found or no source_package_key, skipping restore"
+          fi
+
       - name: Add original repository in configuration
         run: |
           from_repository_url=${{ needs.extract-collectors.outputs.from_repository_url }}
@@ -436,16 +469,11 @@ jobs:
           done < tmp_input
           printf 'collector requires %s\n' "$*"
           ${{ env.CONAN }} remote disable "${{ needs.extract-collectors.outputs.conan_release_remote_name}}"
-          ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer release --deployer-folder=to_conan --lockfile-out="conan-lock-${{ matrix.profile }}"
+          ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer release --deployer-folder=to_conan --lockfile=conan.lock 
           if [ "${{needs.extract-collectors.outputs.deliverable}}" = 'true' ]; then
-            ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer delivery --deployer-folder=to_apt
+            ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer delivery --deployer-folder=to_apt --lockfile=conan.lock
           fi
           ${{ env.CONAN }} remote enable "${{ needs.extract-collectors.outputs.conan_release_remote_name}}"
-
-      - uses: actions/upload-artifact@v6
-        with:
-          name: "conan-lock-${{ matrix.profile }}"
-          path: "conan-lock-${{ matrix.profile }}"          
 
       - name: Upload to conan
         id: upload
@@ -614,9 +642,35 @@ jobs:
         with:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
-      - uses: actions/download-artifact@v8
-        with:
-          name: conan-lock-default
+      - name: Compute profile hash
+        run: |
+          if [ -z "${{ inputs.source_package_key }}" ]; then
+            SOURCE_KEY="no_source"
+          else
+            SOURCE_KEY="${{ inputs.source_package_key }}"
+          fi
+          PROFILE_HASH=${{ matrix.profile }}
+          echo "PROFILE_HASH=$PROFILE_HASH" >> $GITHUB_ENV
+          echo "SOURCE_KEY=$SOURCE_KEY" >> $GITHUB_ENV
+
+      - name: Restore or create lockfile
+        run: |
+          LOCK_NAME=lock-${SOURCE_KEY}-${PROFILE_HASH}.json
+          if [ -z "${{ inputs.source_package_key }}" ] || ! gh run download-artifact $LOCK_NAME; then
+            echo "Creating lockfile locally"
+            conan lock create . --profile=${{ matrix.profile }} --lockfile=conan-lockfile.json
+          else
+            cp $LOCK_NAME conan-lockfile.json
+          fi
+
+      - name: Restore Conan cache (optional)
+        run: |
+          CACHE_NAME=cache-${SOURCE_KEY}-${PROFILE_HASH}.tar.gz
+          if [ -n "${{ inputs.source_package_key }}" ] && gh run download-artifact $CACHE_NAME; then
+            tar -xzf $CACHE_NAME -C ~
+          else
+            echo "Cache not found or no source_package_key, skipping restore"
+          fi
       - name: Collect docs delivery
         run: |
           set --
