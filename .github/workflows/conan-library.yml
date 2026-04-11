@@ -196,8 +196,8 @@ jobs:
             SOURCE_KEY="${{ inputs.source_package_key }}"
           fi
           PROFILE_HASH="${{ matrix.profile }}"
-          echo "PROFILE_HASH=$PROFILE_HASH" >> $GITHUB_ENV
-          echo "SOURCE_KEY=$SOURCE_KEY" >> $GITHUB_ENV
+          echo "PROFILE_HASH=$PROFILE_HASH" >> "$GITHUB_ENV"
+          echo "SOURCE_KEY=$SOURCE_KEY" >> "$GITHUB_ENV"
 
       - name: Restore or create lockfile
         run: |
@@ -371,7 +371,6 @@ jobs:
 
       - name: Dispatch workflow of ${{ matrix.collector }} on ${{ github.ref_name }}
         run: |
-          PROFILES=$(cat profiles.json)
           gh workflow run "${TARGET_WORKFLOW}" \
             --repo "${{ matrix.collector }}" \
             --ref "${{ github.ref_name }}" \
