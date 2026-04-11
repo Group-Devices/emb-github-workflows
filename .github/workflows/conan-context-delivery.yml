@@ -649,7 +649,7 @@ jobs:
           else
             SOURCE_KEY="${{ inputs.source_package_key }}"
           fi
-          PROFILE_HASH=${{ matrix.profile }}
+          PROFILE_HASH=default
           echo "PROFILE_HASH=$PROFILE_HASH" >> "$GITHUB_ENV"
           echo "SOURCE_KEY=$SOURCE_KEY" >> "$GITHUB_ENV"
 
@@ -665,9 +665,9 @@ jobs:
 
       - name: Restore Conan cache (optional)
         run: |
-          CACHE_NAME=cache-${SOURCE_KEY}-${PROFILE_HASH}.tar.gz
+          CACHE_NAME="cache-${SOURCE_KEY}-${PROFILE_HASH}.tar.gz"
           if [ -n "${{ inputs.source_package_key }}" ] && gh run download-artifact $CACHE_NAME; then
-            tar -xzf $CACHE_NAME -C ~
+            tar -xzf "$CACHE_NAME" -C ~
           else
             echo "Cache not found or no source_package_key, skipping restore"
           fi
