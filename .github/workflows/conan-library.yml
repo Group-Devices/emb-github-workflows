@@ -306,7 +306,7 @@ jobs:
       - name: Upload lockfile
         uses: actions/upload-artifact@v4
         with:
-          name: lock-${PACKAGE_NAME}-${BUILD_ID}-${RUN_ATTEMPT}-${PROFILE_HASH}
+          name: lock-${{ github.repository }}-${{ github.run_number }}-${{ github.run_attempt }}-${{ matrix.profile }}
           path: conan-lockfile.json
           retention-days: 1
 
@@ -318,8 +318,8 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: cache-${PACKAGE_NAME}-${BUILD_ID}-${RUN_ATTEMPT}-${PROFILE_HASH}
-          path: cache-${PACKAGE_NAME}-${BUILD_ID}-${RUN_ATTEMPT}-${PROFILE_HASH}.tar.gz
+          name: cache-${{ github.repository }}-${{ github.run_number }}-${{ github.run_attempt }}-${{ matrix.profile }}
+          path: cache-${{ github.repository }}-${{ github.run_number }}-${{ github.run_attempt }}-${{ matrix.profile }}.tar.gz
           retention-days: 1
           
   rebuild-collectors:
