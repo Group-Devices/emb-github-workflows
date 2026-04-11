@@ -195,25 +195,25 @@ jobs:
           else
             SOURCE_KEY="${{ inputs.source_package_key }}"
           fi
-          PROFILE_HASH=${{ matrix.profile }}
+          PROFILE_HASH="${{ matrix.profile }}"
           echo "PROFILE_HASH=$PROFILE_HASH" >> $GITHUB_ENV
           echo "SOURCE_KEY=$SOURCE_KEY" >> $GITHUB_ENV
 
       - name: Restore or create lockfile
         run: |
           LOCK_NAME=lock-${SOURCE_KEY}-${PROFILE_HASH}.json
-          if [ -z "${{ inputs.source_package_key }}" ] || ! gh run download-artifact $LOCK_NAME; then
+          if [ -z "${{ inputs.source_package_key }}" ] || ! gh run download-artifact "$LOCK_NAME"; then
             echo "Creating lockfile locally"
             conan lock create . --profile=${{ matrix.profile }} --lockfile=conan-lockfile.json
           else
-            cp $LOCK_NAME conan-lockfile.json
+            cp "$LOCK_NAME" conan-lockfile.json
           fi
 
       - name: Restore Conan cache (optional)
         run: |
           CACHE_NAME=cache-${SOURCE_KEY}-${PROFILE_HASH}.tar.gz
-          if [ -n "${{ inputs.source_package_key }}" ] && gh run download-artifact $CACHE_NAME; then
-            tar -xzf $CACHE_NAME -C ~
+          if [ -n "${{ inputs.source_package_key }}" ] && gh run download-artifact "$CACHE_NAME"; then
+            tar -xzf "$CACHE_NAME" -C ~
           else
             echo "Cache not found or no source_package_key, skipping restore"
           fi
@@ -309,7 +309,7 @@ jobs:
           retention-days: 1
 
       - name: Archive Conan cache
-        run: tar -czf cache-${PACKAGE_NAME}-${GITHUB_RUN_ID}-${PROFILE_HASH}.tar.gz -C ~ .conan2
+        run: tar -czf "cache-${PACKAGE_NAME}-${GITHUB_RUN_ID}-${PROFILE_HASH}.tar.gz" -C ~ .conan2
 
       - uses: actions/upload-artifact@v4
         with:
@@ -372,8 +372,6 @@ jobs:
       - name: Dispatch workflow of ${{ matrix.collector }} on ${{ github.ref_name }}
         run: |
           PROFILES=$(cat profiles.json)
-          LOCKFILES=$(echo $PROFILES | jq -r '. | map("base-lockfile-" + .) | join(",")')
-          CACHES=$(echo $PROFILES | jq -r '. | map("conan-cache-base-" + .) | join(",")')        
           gh workflow run "${TARGET_WORKFLOW}" \
             --repo "${{ matrix.collector }}" \
             --ref "${{ github.ref_name }}" \
