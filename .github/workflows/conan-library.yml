@@ -253,13 +253,6 @@ jobs:
               fi  
             done
           fi  
-          unset SECRETARY_SDK_DOXYGEN_DIR
-          if [ "${{ inputs.enabled-doxygen }}" = "true" ] || [ "$(conanfile_flag_true "." enabled_doxygen)" = "true" ]; then
-            echo "Current package ${repo} enables Doxygen docs"
-            prepare_doxygen_docs "." "${repo}"
-          else
-            echo "Current package ${repo} does not enable Doxygen docs"
-          fi
           conan create . -pr:h "${{ matrix.profile }}" 2>&1 | tee conan_create.log
           if [ ${{ github.event_name }} != 'pull_request' ]; then
             conan upload -r "${upload}" "${repo}" --confirm
