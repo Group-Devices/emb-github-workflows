@@ -187,46 +187,6 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-
-          conanfile_flag_true() {
-            package_dir="$1"
-            field_name="$2"
-            python3 -c 'import importlib.util, inspect, pathlib, sys; package_dir = pathlib.Path(sys.argv[1]).resolve(); field_name = sys.argv[2]; conanfile_path = package_dir / "conanfile.py"; module_name = "codex_conanfile"; spec = importlib.util.spec_from_file_location(module_name, conanfile_path); module = None if spec is None or spec.loader is None else importlib.util.module_from_spec(spec); spec.loader.exec_module(module) if module is not None else None; conan_class = None if module is None else next((cls for _, cls in inspect.getmembers(module, inspect.isclass) if cls.__module__ == module_name), None); value = False if conan_class is None else getattr(conan_class, field_name, False); print("true" if value is True else "false")' "$package_dir" "$field_name"
-          }
-
-          ensure_doxygen_toolchain() {
-            if [ "${DOXYGEN_TOOLCHAIN_READY:-false}" != "true" ]; then
-              apt-get update
-              apt-get install -y doxygen python3-pip
-              DOXYGEN_TOOLCHAIN_READY=true
-            fi
-          }
-
-          prepare_doxygen_docs() {
-            package_dir="$1"
-            project_name="$2"
-
-            if [ "${{ matrix.profile }}" != "default" ]; then
-              unset SECRETARY_SDK_DOXYGEN_DIR
-              echo "Skip Doxygen docs for profile ${{ matrix.profile }}"
-              return 0
-            fi
-
-            ensure_doxygen_toolchain
-            doxygen_output_dir="$(mktemp -d)"
-            export SECRETARY_SDK_DOXYGEN_DIR="${doxygen_output_dir}/html"
-
-            printf '%s\n' \
-              "PROJECT_NAME=\"${project_name}\"" \
-              "RECURSIVE=YES" \
-              "OUTPUT_DIRECTORY=${doxygen_output_dir}" \
-              "HTML_OUTPUT=html" \
-              > "${package_dir}/Doxyfile"
-            doxygen "${package_dir}/Doxyfile"
-            rm -f "${package_dir}/Doxyfile"
-            return 0
-          }
-
           upload=$(yq e '.upload' "${CONAN_CONTEXT_PATH}")
           if [ -z "${upload}" ] || [ "null" = "${upload}" ]; then
             echo "Field upload is missing in ${CONAN_CONTEXT_PATH}"
