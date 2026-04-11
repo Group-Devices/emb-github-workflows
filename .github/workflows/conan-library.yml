@@ -74,7 +74,7 @@ jobs:
       build-profile-list: ${{ steps.generate-conan-context.outputs.build-profile-list }}
       collectors-list: ${{ steps.generate-conan-context.outputs.collectors-list }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: Group-Devices/emb-github-workflows/.github/actions/generate-conan-context@main
         id: generate-conan-context
         with:
@@ -92,7 +92,7 @@ jobs:
     needs:
       - generate-conan-context
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/download-artifact@v8
         with:
           name: conan-context
@@ -157,7 +157,7 @@ jobs:
         username: ${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
         password: ${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Set safe git path
         run: |
           repo=$(basename ${{ github.repository }})
