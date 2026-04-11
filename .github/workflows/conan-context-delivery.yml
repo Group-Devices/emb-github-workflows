@@ -419,7 +419,7 @@ jobs:
           LOCK_NAME=lock-${SOURCE_KEY}-${PROFILE_HASH}.json
           if [ -z "${{ inputs.source_package_key }}" ] || ! gh run download-artifact "$LOCK_NAME"; then
             echo "Creating lockfile locally"
-            conan lock create . --profile=${{ matrix.profile }} --lockfile=conan-lockfile.json
+            conan lock create . --profile=${{ matrix.profile }} -l conan-lockfile.json
           else
             cp "$LOCK_NAME" conan-lockfile.json
           fi
@@ -469,9 +469,9 @@ jobs:
           done < tmp_input
           printf 'collector requires %s\n' "$*"
           ${{ env.CONAN }} remote disable "${{ needs.extract-collectors.outputs.conan_release_remote_name}}"
-          ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer release --deployer-folder=to_conan --lockfile=conan.lock 
+          ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer release --deployer-folder=to_conan -l conan.lock 
           if [ "${{needs.extract-collectors.outputs.deliverable}}" = 'true' ]; then
-            ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer delivery --deployer-folder=to_apt --lockfile=conan.lock
+            ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer delivery --deployer-folder=to_apt -l conan.lock
           fi
           ${{ env.CONAN }} remote enable "${{ needs.extract-collectors.outputs.conan_release_remote_name}}"
 
