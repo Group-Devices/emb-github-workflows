@@ -436,11 +436,16 @@ jobs:
           done < tmp_input
           printf 'collector requires %s\n' "$*"
           ${{ env.CONAN }} remote disable "${{ needs.extract-collectors.outputs.conan_release_remote_name}}"
-          ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer release --deployer-folder=to_conan
+          ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer release --deployer-folder=to_conan --lockfile-out=conan.lock
           if [ "${{needs.extract-collectors.outputs.deliverable}}" = 'true' ]; then
             ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer delivery --deployer-folder=to_apt
           fi
           ${{ env.CONAN }} remote enable "${{ needs.extract-collectors.outputs.conan_release_remote_name}}"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: "conan-lock-${{ matrix.profile }}"
+          path: conan.lock          
 
       - name: Upload to conan
         id: upload
@@ -609,7 +614,9 @@ jobs:
         with:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
-
+      - uses: actions/download-artifact@v8
+        with:
+          name: conan-lock-default
       - name: Collect docs delivery
         run: |
           set --
@@ -619,7 +626,7 @@ jobs:
             set -- "$@" "--requires=${collector}/[*]"
           done < tmp_input
           printf 'collector requires %s\n' "$*"
-          ${{ env.CONAN }} install "$@" -pr:h default --deployer docs --deployer-folder=to_docs
+          ${{ env.CONAN }} install "$@" -pr:h default --deployer docs --deployer-folder=to_docs --lock-file=conan-lock-default
 
       - name: Install docs generator tools
         run: |
