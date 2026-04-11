@@ -410,25 +410,25 @@ jobs:
           else
             SOURCE_KEY="${{ inputs.source_package_key }}"
           fi
-          PROFILE_HASH=${{ matrix.profile }}
-          echo "PROFILE_HASH=$PROFILE_HASH" >> $GITHUB_ENV
-          echo "SOURCE_KEY=$SOURCE_KEY" >> $GITHUB_ENV
+          PROFILE_HASH="${{ matrix.profile }}"
+          echo "PROFILE_HASH=$PROFILE_HASH" >> "$GITHUB_ENV"
+          echo "SOURCE_KEY=$SOURCE_KEY" >> "$GITHUB_ENV"
 
       - name: Restore or create lockfile
         run: |
           LOCK_NAME=lock-${SOURCE_KEY}-${PROFILE_HASH}.json
-          if [ -z "${{ inputs.source_package_key }}" ] || ! gh run download-artifact $LOCK_NAME; then
+          if [ -z "${{ inputs.source_package_key }}" ] || ! gh run download-artifact "$LOCK_NAME"; then
             echo "Creating lockfile locally"
             conan lock create . --profile=${{ matrix.profile }} --lockfile=conan-lockfile.json
           else
-            cp $LOCK_NAME conan-lockfile.json
+            cp "$LOCK_NAME" conan-lockfile.json
           fi
 
       - name: Restore Conan cache (optional)
         run: |
-          CACHE_NAME=cache-${SOURCE_KEY}-${PROFILE_HASH}.tar.gz
-          if [ -n "${{ inputs.source_package_key }}" ] && gh run download-artifact $CACHE_NAME; then
-            tar -xzf $CACHE_NAME -C ~
+          CACHE_NAME="cache-${SOURCE_KEY}-${PROFILE_HASH}.tar.gz"
+          if [ -n "${{ inputs.source_package_key }}" ] && gh run download-artifact "$CACHE_NAME"; then
+            tar -xzf "$CACHE_NAME" -C ~
           else
             echo "Cache not found or no source_package_key, skipping restore"
           fi
@@ -650,17 +650,17 @@ jobs:
             SOURCE_KEY="${{ inputs.source_package_key }}"
           fi
           PROFILE_HASH=${{ matrix.profile }}
-          echo "PROFILE_HASH=$PROFILE_HASH" >> $GITHUB_ENV
-          echo "SOURCE_KEY=$SOURCE_KEY" >> $GITHUB_ENV
+          echo "PROFILE_HASH=$PROFILE_HASH" >> "$GITHUB_ENV"
+          echo "SOURCE_KEY=$SOURCE_KEY" >> "$GITHUB_ENV"
 
       - name: Restore or create lockfile
         run: |
-          LOCK_NAME=lock-${SOURCE_KEY}-${PROFILE_HASH}.json
-          if [ -z "${{ inputs.source_package_key }}" ] || ! gh run download-artifact $LOCK_NAME; then
+          LOCK_NAME="lock-${SOURCE_KEY}-${PROFILE_HASH}.json"
+          if [ -z "${{ inputs.source_package_key }}" ] || ! gh run download-artifact "$LOCK_NAME"; then
             echo "Creating lockfile locally"
-            conan lock create . --profile=${{ matrix.profile }} --lockfile=conan-lockfile.json
+            conan lock create . --profile=default --lockfile=conan-lockfile.json
           else
-            cp $LOCK_NAME conan-lockfile.json
+            cp "$LOCK_NAME" conan-lockfile.json
           fi
 
       - name: Restore Conan cache (optional)
