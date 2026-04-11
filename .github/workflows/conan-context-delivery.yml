@@ -445,7 +445,7 @@ jobs:
       - uses: actions/upload-artifact@v6
         with:
           name: "conan-lock-${{ matrix.profile }}"
-          path: conan.lock          
+          path: "conan-lock-${{ matrix.profile }}"          
 
       - name: Upload to conan
         id: upload
