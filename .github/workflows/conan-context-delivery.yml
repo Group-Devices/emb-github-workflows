@@ -436,7 +436,7 @@ jobs:
           done < tmp_input
           printf 'collector requires %s\n' "$*"
           ${{ env.CONAN }} remote disable "${{ needs.extract-collectors.outputs.conan_release_remote_name}}"
-          ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer release --deployer-folder=to_conan --lockfile-out=conan.lock
+          ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer release --deployer-folder=to_conan --lockfile-out="conan-lock-${{ matrix.profile }}"
           if [ "${{needs.extract-collectors.outputs.deliverable}}" = 'true' ]; then
             ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer delivery --deployer-folder=to_apt
           fi
