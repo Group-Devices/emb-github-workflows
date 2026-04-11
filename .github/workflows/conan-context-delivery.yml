@@ -626,7 +626,7 @@ jobs:
           python3 -m pip install markdown json-schema-for-humans
 
       - name: Download package metadata for docs link pinning
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: packages-release-default
           path: ./docs_metadata
@@ -665,7 +665,7 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
   finalize-cloning:
     runs-on: ubuntu-latest
