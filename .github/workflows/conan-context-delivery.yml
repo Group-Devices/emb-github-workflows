@@ -663,8 +663,7 @@ jobs:
         run: |
           LOCK_NAME="lock-${SOURCE_KEY}-${PROFILE_HASH}.json"
           if [ -z "${{ inputs.source_package_key }}" ] || ! gh run download-artifact "$LOCK_NAME"; then
-            echo "Creating lockfile locally"
-            conan lock create . --profile=default --lockfile-out=conan-lockfile.json
+            echo "Lockfile not created"
           else
             cp "$LOCK_NAME" conan-lockfile.json
           fi
@@ -687,7 +686,12 @@ jobs:
             set -- "$@" "--requires=${collector}/[*]"
           done < tmp_input
           printf 'collector requires %s\n' "$*"
-          ${{ env.CONAN }} install "$@" -pr:h default --deployer docs --deployer-folder=to_docs --lockfile=conan-lock-default
+          if [ -f "conan-lockfile.json" ]; then
+            LOCKFILE="-l conan.lock"
+          else
+            LOCKFILE=""
+          fi
+          ${{ env.CONAN }} install "$@" -pr:h default --deployer docs --deployer-folder=to_docs "$LOCKFILE"
 
       - name: Install docs generator tools
         run: |
