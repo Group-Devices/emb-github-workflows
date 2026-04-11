@@ -283,7 +283,7 @@ jobs:
               git reset --hard "$sha"
               # Following command must exit if conan create fail because we've set on top of this script 'set -o pipefail'
               # Please do not add any command behind '| tee conan_create.log' that could change the return code
-              PREVIOUS_VERSION="${version}+${build}" conan create . -pr:h "${{ matrix.profile }}" -l conan-lockfile.json 2>&1 | tee conan_create.log
+              PREVIOUS_VERSION="${version}+${build}" conan create . -pr:h "${{ matrix.profile }}" -l ../conan-lockfile.json 2>&1 | tee conan_create.log
               cd ..
               if [ ${{ github.event_name }} != 'pull_request' ]; then
                 conan upload -r "${upload}" "${name}" --confirm
