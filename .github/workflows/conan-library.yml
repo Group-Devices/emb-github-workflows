@@ -62,6 +62,7 @@ env:
   SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
   CONAN_CONTEXT_PATH: ".conan-context/conan-context.yml"
   BUILD_ID: "${{github.run_number}}"
+  RUN_ATTEMPT: ${{ github.run_attempt }}  
   ALL_SECRETS: '${{ tojson(secrets) }}'
 
 jobs:
@@ -305,7 +306,7 @@ jobs:
       - name: Upload lockfile
         uses: actions/upload-artifact@v4
         with:
-          name: lock-${PACKAGE_NAME}-${GITHUB_RUN_ID}-${PROFILE_HASH}
+          name: lock-${PACKAGE_NAME}-${BUILD_ID}-${RUN_ATTEMPT}-${PROFILE_HASH}
           path: conan-lockfile.json
           retention-days: 1
 
@@ -313,12 +314,12 @@ jobs:
         run: |
           CONAN_CACHE_DIR=$(conan config home)
           echo "Conan cache directory: $CONAN_CACHE_DIR"
-          tar -czf "cache-${PACKAGE_NAME}-${GITHUB_RUN_ID}-${PROFILE_HASH}.tar.gz" -C "$CONAN_CACHE_DIR"
+          tar -czf "cache-${PACKAGE_NAME}-${BUILD_ID}-${RUN_ATTEMPT}-${PROFILE_HASH}.tar.gz" -C "$CONAN_CACHE_DIR"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: cache-${PACKAGE_NAME}-${GITHUB_RUN_ID}-${PROFILE_HASH}
-          path: cache-${PACKAGE_NAME}-${GITHUB_RUN_ID}-${PROFILE_HASH}.tar.gz
+          name: cache-${PACKAGE_NAME}-${BUILD_ID}-${RUN_ATTEMPT}-${PROFILE_HASH}
+          path: cache-${PACKAGE_NAME}-${BUILD_ID}-${RUN_ATTEMPT}-${PROFILE_HASH}.tar.gz
           retention-days: 1
           
   rebuild-collectors:
@@ -381,7 +382,7 @@ jobs:
             --field rebuild_cause="Change in ${{ github.ref_name }} of ${{ github.repository }}" \
             --field linked_commit="https://github.com/${{ github.repository }}/commit/${{ github.sha }}" \
             --field built_package="${{ github.repository }}" \
-            --field source_package_key="${PACKAGE_NAME}-${GITHUB_RUN_ID}"           
+            --field source_package_key="${PACKAGE_NAME}-${BUILD_ID}-${RUN_ATTEMPT}"           
 
   rebuild-context:
     runs-on: ubuntu-latest
@@ -412,4 +413,4 @@ jobs:
           gh workflow run "delivery.yml" \
             --repo "${context}" \
             --ref "${{ github.ref_name }}" \
-            --field source_package_key="${PACKAGE_NAME}-${GITHUB_RUN_ID}"    
+            --field source_package_key="${PACKAGE_NAME}-${BUILD_ID}-${RUN_ATTEMPT}"    
