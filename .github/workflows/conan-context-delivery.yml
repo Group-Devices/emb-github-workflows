@@ -427,8 +427,10 @@ jobs:
       - name: Restore Conan cache (optional)
         run: |
           CACHE_NAME="cache-${SOURCE_KEY}-${PROFILE_HASH}.tar.gz"
+          CONAN_CACHE_DIR=$(conan config home)
+          echo "Conan cache directory: $CONAN_CACHE_DIR"
           if [ -n "${{ inputs.source_package_key }}" ] && gh run download-artifact "$CACHE_NAME"; then
-            tar -xzf "$CACHE_NAME" -C ~
+            tar -xzf "$CACHE_NAME" -C "$CONAN_CACHE_DIR"
           else
             echo "Cache not found or no source_package_key, skipping restore"
           fi
@@ -666,8 +668,9 @@ jobs:
       - name: Restore Conan cache (optional)
         run: |
           CACHE_NAME="cache-${SOURCE_KEY}-${PROFILE_HASH}.tar.gz"
+          CONAN_CACHE_DIR=$(conan config home)
           if [ -n "${{ inputs.source_package_key }}" ] && gh run download-artifact "$CACHE_NAME"; then
-            tar -xzf "$CACHE_NAME" -C ~
+            tar -xzf "$CACHE_NAME" -C "$CONAN_CACHE_DIR"
           else
             echo "Cache not found or no source_package_key, skipping restore"
           fi
