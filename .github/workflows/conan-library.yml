@@ -216,7 +216,7 @@ jobs:
             SOURCE_OWNER=$(echo "$SOURCE_CONTEXT" | jq -r '.package_context.repo_owner')
             echo "SOURCE_REPO=$SOURCE_REPO" >> "$GITHUB_ENV"
             echo "SOURCE_RUN_ID=$SOURCE_RUN_ID" >> "$GITHUB_ENV"
-            echo "SOURCE_OWNER=$SOURCE_ONNER" >> "$GITHUB_ENV"
+            echo "SOURCE_OWNER=$SOURCE_OWNER" >> "$GITHUB_ENV"
           fi
           
       - name: Extract authentication token for ${{ env.SOURCE_OWNER }}
