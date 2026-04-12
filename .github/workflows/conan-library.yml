@@ -404,23 +404,26 @@ jobs:
       - name: Dispatch workflow of ${{ matrix.collector }} on ${{ github.ref_name }}
         run: |
           SHORT_SHA=${GITHUB_SHA::7}
+          JSON=$(jq -n --compact-output '{
+            package_context: {
+              repo: "'"${GITHUB_REPOSITORY}"'",
+              owner: "'"${GITHUB_REPOSITORY_OWNER}"'",
+              run_id: '"$GITHUB_RUN_ID"',
+              run_number: '"$GITHUB_RUN_NUMBER"',
+              run_attempt: '"$GITHUB_RUN_ATTEMPT"',
+              sha: "'"${GITHUB_SHA}"'",
+              ref: "'"${GITHUB_REF}"'",
+              actor: "'"${GITHUB_ACTOR}"'",
+              workflow: "'"${GITHUB_WORKFLOW}"'"
+            } 
+          }')
+          echo "context pass $JSON"
+          echo "command gh workflow run ${TARGET_WORKFLOW} --repo ${{ matrix.collector }} --ref ${{ github.ref_name }} --field built_package=$JSON"
           gh workflow run "${TARGET_WORKFLOW}" \
             --repo "${{ matrix.collector }}" \
             --ref "${{ github.ref_name }}" \
             --field rebuild_cause="Change in ${{ github.ref_name }} of ${{ github.repository }} (sha $SHORT_SHA)" \
-            --field built_package="$(jq -n --compact-output '{
-              package_context: {
-                repo: "'"${GITHUB_REPOSITORY}"'",
-                owner: "'"${GITHUB_REPOSITORY_OWNER}"'",
-                run_id: '"$GITHUB_RUN_ID"',
-                run_number: '"$GITHUB_RUN_NUMBER"',
-                run_attempt: '"$GITHUB_RUN_ATTEMPT"',
-                sha: "'"${GITHUB_SHA}"'",
-                ref: "'"${GITHUB_REF}"'",
-                actor: "'"${GITHUB_ACTOR}"'",
-                workflow: "'"${GITHUB_WORKFLOW}"'"
-              }
-            }')"            
+            --field built_package="$JSON"            
 
   rebuild-context:
     runs-on: ubuntu-latest
