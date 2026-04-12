@@ -60,7 +60,9 @@ env:
   SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
   CONAN_CONTEXT_PATH: ".conan-context/conan-context.yml"
   BUILD_ID: "${{github.run_number}}"
-  RUN_ATTEMPT: ${{ github.run_attempt }}  
+  RUN_ID: ${{ github.run_id }}
+  RUN_ATTEMPT: ${{ github.run_attempt }}
+  REPO: ${{ github.repository }}
   PACKAGE_NAME: ${{ github.event.repository.name }}
   ALL_SECRETS: '${{ tojson(secrets) }}'
 
@@ -199,9 +201,10 @@ jobs:
           echo "PROFILE_HASH=$PROFILE_HASH" >> "$GITHUB_ENV"
           echo "SOURCE_KEY=$SOURCE_KEY" >> "$GITHUB_ENV"
           # Extract parts using '-' as separator
-          # The trick: split into array
-          IFS='-' read -r SOURCE_REPO SOURCE_RUN_NUMBER SOURCE_RUN_ATTEMPT <<< "$(echo $SOURCE_KEY)"
+          SOURCE_REPO=$(echo "$SOURCE_KEY" | rev | cut -d'-' -f2- | rev)
+          SOURCE_RUN_ID=$(echo "$SOURCE_KEY" | rev | cut -d'-' -f1 | rev)
           echo "SOURCE_REPO=$SOURCE_REPO" >> "$GITHUB_ENV"
+          echo "SOURCE_RUN_ID=$SOURCE_RUN_ID" >> "$GITHUB_ENV"
 
       - name: Extract authentication token for Group-Devices
         uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@main
@@ -211,20 +214,20 @@ jobs:
 
       - name: Restore or create lockfile
         run: |
-          LOCK_NAME=lock-${SOURCE_KEY}-${PROFILE_HASH}.json
-          if [ -z "${{ inputs.force-build }}" ] || ! gh run download "$LOCK_NAME" --repo "Group-Devices/$SOURCE_REPO" ; then
+          LOCK_NAME=lock-${PROFILE_HASH}
+          if [ -z "${{ inputs.force-build }}" ] || ! gh run download "$LOCK_NAME" --repo "$SOURCE_REPO" ; then
             echo "Creating lockfile locally"
             conan lock create . --profile=${{ matrix.profile }} --lockfile-out=conan-lockfile.json
           else
-            cp "$LOCK_NAME" conan-lockfile.json
+            mv "$LOCK_NAME" conan-lockfile.json
           fi
 
       - name: Restore Conan cache (optional)
         if: ${{ inputs.use_cache == true }}
         run: |
-          CACHE_NAME=cache-${SOURCE_KEY}-${PROFILE_HASH}.tar.gz
+          CACHE_NAME=cache-${PROFILE_HASH}.tar.gz
           CONAN_CACHE_DIR=$(conan config home)          
-          if [ -n "${{ inputs.force-build }}" ] && gh run download "$CACHE_NAME"; then
+          if [ -n "${{ inputs.force-build }}" ] && gh run download "$CACHE_NAME" --repo "$SOURCE_REPO" ; then
             tar -xzf "$CACHE_NAME" -C "$CONAN_CACHE_DIR"
           else
             echo "Cache not found or no force-build, skipping restore"
@@ -316,7 +319,7 @@ jobs:
       - name: Upload lockfile
         uses: actions/upload-artifact@v4
         with:
-          name: lock-${{ github.event.repository.name }}-${{ github.run_number }}-${{ github.run_attempt }}-${{ matrix.profile }}
+          name: lock-${{ matrix.profile }}
           path: conan-lockfile.json
           retention-days: 1
 
@@ -325,13 +328,13 @@ jobs:
         run: |
           CONAN_CACHE_DIR=$(conan config home)
           echo "Conan cache directory: $CONAN_CACHE_DIR"
-          tar -czf "cache-${PACKAGE_NAME}-${BUILD_ID}-${RUN_ATTEMPT}-${PROFILE_HASH}.tar.gz" -C "$CONAN_CACHE_DIR" .
+          tar -czf "cache-${PROFILE_HASH}.tar.gz" -C "$CONAN_CACHE_DIR" .
 
       - if: ${{ inputs.use_cache == true }}
         uses: actions/upload-artifact@v4
         with:
-          name: cache-${{ github.event.repository.name }}-${{ github.run_number }}-${{ github.run_attempt }}-${{ matrix.profile }}
-          path: cache-${{ github.event.repository.name }}-${{ github.run_number }}-${{ github.run_attempt }}-${{ matrix.profile }}.tar.gz
+          name: cache-${{ matrix.profile }}.tar.gz
+          path: cache-${{ matrix.profile }}.tar.gz
           retention-days: 1
           
   rebuild-collectors:
@@ -393,7 +396,7 @@ jobs:
             --repo "${{ matrix.collector }}" \
             --ref "${{ github.ref_name }}" \
             --field rebuild_cause="Change in ${{ github.ref_name }} of ${{ github.repository }} (sha $SHORT_SHA)" \
-            --field built_package="${PACKAGE_NAME}-${BUILD_ID}-${RUN_ATTEMPT}"             
+            --field built_package="${REPO}-${RUN_ID}"             
 
   rebuild-context:
     runs-on: ubuntu-latest
