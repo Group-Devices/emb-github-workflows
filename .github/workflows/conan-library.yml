@@ -69,7 +69,7 @@ env:
   REPO: ${{ github.repository }}
   PACKAGE_NAME: ${{ github.event.repository.name }}
   ALL_SECRETS: '${{ tojson(secrets) }}'
-  SOURCE_CONTEXT: ${{ fromJson(github.event.inputs.force-build) }}
+  SOURCE_CONTEXT: ${{ github.event.inputs.force-build }}
 
 jobs:
   generate-conan-context:
@@ -406,7 +406,18 @@ jobs:
 
       - name: Generate full GitHub context for package_context
         run: |
-          jq -n --compact-output '{
+           > source_context.json  
+
+      - name: Read JSON as single line
+        id: read_source_context
+        run: |
+          JSON=$(jq -c . source_context.json)
+          echo "json=$JSON" >> "$GITHUB_OUTPUT"
+      
+      - name: Dispatch workflow of ${{ matrix.collector }} on ${{ github.ref_name }}
+        run: |
+          SHORT_SHA=${GITHUB_SHA::7}
+          JSON=$(jq -n --compact-output '{
             package_context: {
               repo: "'"${GITHUB_REPOSITORY}"'",
               owner: "'"${GITHUB_REPOSITORY_OWNER}"'",
@@ -418,22 +429,13 @@ jobs:
               actor: "'"${GITHUB_ACTOR}"'",
               workflow: "'"${GITHUB_WORKFLOW}"'"
             }
-          }' > source_context.json  
-
-      - name: Read JSON as single line
-        id: read_source_context
-        run: |
-          JSON=$(jq -c .source_context.json)
-          echo "json=$JSON" >> "$GITHUB_OUTPUT"
-      
-      - name: Dispatch workflow of ${{ matrix.collector }} on ${{ github.ref_name }}
-        run: |
-          SHORT_SHA=${GITHUB_SHA::7}
+          }')
+          echo "context passed $JSON"
           gh workflow run "${TARGET_WORKFLOW}" \
             --repo "${{ matrix.collector }}" \
             --ref "${{ github.ref_name }}" \
             --field rebuild_cause="Change in ${{ github.ref_name }} of ${{ github.repository }} (sha $SHORT_SHA)" \
-            --field built_package=${{ toJson(steps.read_source_context.outputs.json) }}
+            --field built_package="$JSON"
 
   rebuild-context:
     runs-on: ubuntu-latest
