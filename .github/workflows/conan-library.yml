@@ -404,16 +404,6 @@ jobs:
             exit 1
           fi
 
-      - name: Generate full GitHub context for package_context
-        run: |
-           > source_context.json  
-
-      - name: Read JSON as single line
-        id: read_source_context
-        run: |
-          JSON=$(jq -c . source_context.json)
-          echo "json=$JSON" >> "$GITHUB_OUTPUT"
-      
       - name: Dispatch workflow of ${{ matrix.collector }} on ${{ github.ref_name }}
         run: |
           SHORT_SHA=${GITHUB_SHA::7}
