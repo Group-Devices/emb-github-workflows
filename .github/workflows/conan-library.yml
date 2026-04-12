@@ -212,7 +212,7 @@ jobs:
       - name: Restore or create lockfile
         run: |
           LOCK_NAME=lock-${SOURCE_KEY}-${PROFILE_HASH}.json
-          if [ -z "${{ inputs.force-build }}" ] || ! gh run download "$LOCK_NAME" --repo "$OWNER/$SOURCE_REPO" ; then
+          if [ -z "${{ inputs.force-build }}" ] || ! gh run download "$LOCK_NAME" --repo "Group-Devices/$SOURCE_REPO" ; then
             echo "Creating lockfile locally"
             conan lock create . --profile=${{ matrix.profile }} --lockfile-out=conan-lockfile.json
           else
