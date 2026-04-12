@@ -204,8 +204,7 @@ jobs:
             echo "WORKFLOW=$GITHUB_WORKFLOW"
           } >> "$GITHUB_ENV"
 
-      - if: github.event.inputs.force-build != ''
-        name: Parse incoming source_context
+      - name: Parse incoming source_context
         run: |
             echo '${{ github.event.inputs.force-build }}' > incoming.json
             jq . incoming.json 
