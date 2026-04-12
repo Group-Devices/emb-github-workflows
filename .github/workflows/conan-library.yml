@@ -228,7 +228,6 @@ jobs:
         if: ${{ inputs.use_cache == true }}
         run: |
           CACHE_NAME=cache-${PROFILE_HASH}.tar.gz
-          CONAN_CACHE_DIR=$(conan config home)          
           if [ -n "${{ inputs.force-build }}" ] && gh run download "$SOURCE_RUN_ID" --name "$CACHE_NAME" --repo "$SOURCE_REPO" ; then
             conan cache restore "$CACHE_NAME"
           else
