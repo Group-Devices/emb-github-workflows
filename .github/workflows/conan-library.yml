@@ -68,7 +68,6 @@ env:
   RUN_ATTEMPT: ${{ github.run_attempt }}
   REPO: ${{ github.repository }}
   PACKAGE_NAME: ${{ github.event.repository.name }}
-  SOURCE_CONTEXT: ${{ github.event.inputs.force-build }}
 
 jobs:
   generate-conan-context:
@@ -205,20 +204,19 @@ jobs:
             echo "WORKFLOW=$GITHUB_WORKFLOW"
           } >> "$GITHUB_ENV"
 
-      - name: Parse incoming source_context
+      - if: github.event.inputs.source_context != ''
+        name: Parse incoming source_context
         run: |
-          if [ -n "$SOURCE_CONTEXT" ]; then
-            echo "$SOURCE_CONTEXT" > incoming.json
+            echo '${{ github.event.inputs.source_context }}' > incoming.json
             jq . incoming.json 
-            SOURCE_REPO=$(echo "$SOURCE_CONTEXT" | jq -r '.package_context.repo')
-            SOURCE_RUN_ID=$(echo "$SOURCE_CONTEXT" | jq -r '.package_context.run_id')
-            SOURCE_OWNER=$(echo "$SOURCE_CONTEXT" | jq -r '.package_context.repo_owner')
+            SOURCE_REPO=$(echo '${{ github.event.inputs.source_context }}' | jq -r '.package_context.repo')
+            SOURCE_RUN_ID=$(echo '${{ github.event.inputs.source_context }}' | jq -r '.package_context.run_id')
+            SOURCE_OWNER=$(echo '${{ github.event.inputs.source_context }}' | jq -r '.package_context.repo_owner')
             { 
               echo "SOURCE_REPO=$SOURCE_REPO"
               echo "SOURCE_RUN_ID=$SOURCE_RUN_ID"
               echo "SOURCE_OWNER=$SOURCE_OWNER" 
             } >> "$GITHUB_ENV"
-          fi
           
       - if: ${{ env.SOURCE_OWNER != '' }}
         name: Extract authentication token for ${{ env.SOURCE_OWNER }}
@@ -230,7 +228,7 @@ jobs:
       - name: Restore or create lockfile
         run: |
           LOCK_NAME="lock-${{ matrix.profile }}"
-          if [ -z "${{ env.SOURCE_CONTEXT }}" ] || ! gh run download "$SOURCE_RUN_ID" --repo "$SOURCE_REPO"  --name "$LOCK_NAME"; then
+          if [ -z "${{ env.SOURCE_REPO }}" ] || ! gh run download "$SOURCE_RUN_ID" --repo "$SOURCE_REPO"  --name "$LOCK_NAME"; then
             echo "Creating lockfile locally"
             conan lock create . --profile=${{ matrix.profile }} --lockfile-out=conan-lockfile.json
           fi
@@ -239,7 +237,7 @@ jobs:
         if: ${{ inputs.use_cache == true }}
         run: |
           CACHE_NAME="cache-${{ matrix.profile }}.tgz"
-          if [ -n "${{ env.SOURCE_CONTEXT }}" ] && gh run download "$SOURCE_RUN_ID" --name "$CACHE_NAME" --repo "$SOURCE_REPO" ; then
+          if [ -n "${{ env.SOURCE_REPO }}" ] && gh run download "$SOURCE_RUN_ID" --name "$CACHE_NAME" --repo "$SOURCE_REPO" ; then
             conan cache restore "$CACHE_NAME"
           else
             echo "Cache not found or no force-build, skipping restore"
