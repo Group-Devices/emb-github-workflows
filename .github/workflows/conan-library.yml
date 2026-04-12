@@ -227,9 +227,9 @@ jobs:
       - name: Restore Conan cache (optional)
         if: ${{ inputs.use_cache == true }}
         run: |
-          CACHE_NAME=cache-${PROFILE_HASH}.tar.gz
+          CACHE_NAME=cache-${PROFILE_HASH}.tgz
           if [ -n "${{ inputs.force-build }}" ] && gh run download "$SOURCE_RUN_ID" --name "$CACHE_NAME" --repo "$SOURCE_REPO" ; then
-            conan cache restore "$CACHE_NAME"
+            conan cache restore --archive "$CACHE_NAME"
           else
             echo "Cache not found or no force-build, skipping restore"
           fi
@@ -329,13 +329,13 @@ jobs:
       - name: Archive Conan cache
         if: ${{ inputs.use_cache == true }}
         run: |
-          conan cache save "cache-${PROFILE_HASH}.tar.gz"
+          conan cache save --file "cache-${PROFILE_HASH}.tgz"
 
       - if: ${{ inputs.use_cache == true }}
         uses: actions/upload-artifact@v4
         with:
-          name: cache-${{ matrix.profile }}.tar.gz
-          path: cache-${{ matrix.profile }}.tar.gz
+          name: cache-${{ matrix.profile }}.tgz
+          path: cache-${{ matrix.profile }}.tgz
           retention-days: 1
           
   rebuild-collectors:
