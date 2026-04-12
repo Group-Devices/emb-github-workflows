@@ -196,15 +196,15 @@ jobs:
 
       - name: Export GitHub context to environment
         run: |
-          echo "RUN_ID=$GITHUB_RUN_ID" >> $GITHUB_ENV
-          echo "RUN_NUMBER=$GITHUB_RUN_NUMBER" >> $GITHUB_ENV
-          echo "RUN_ATTEMPT=$GITHUB_RUN_ATTEMPT" >> $GITHUB_ENV
-          echo "REPO=$GITHUB_REPOSITORY" >> $GITHUB_ENV
-          echo "OWNER=${GITHUB_REPOSITORY_OWNER}" >> $GITHUB_ENV
-          echo "SHA=$GITHUB_SHA" >> $GITHUB_ENV
-          echo "REF=$GITHUB_REF" >> $GITHUB_ENV
-          echo "ACTOR=$GITHUB_ACTOR" >> $GITHUB_ENV
-          echo "WORKFLOW=$GITHUB_WORKFLOW" >> $GITHUB_ENV
+          echo "RUN_ID=$GITHUB_RUN_ID" >> "$GITHUB_ENV"
+          echo "RUN_NUMBER=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          echo "RUN_ATTEMPT=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+          echo "REPO=$GITHUB_REPOSITORY" >> "$GITHUB_ENV"
+          echo "OWNER=${GITHUB_REPOSITORY_OWNER}" >> "$GITHUB_ENV"
+          echo "SHA=$GITHUB_SHA" >> "$GITHUB_ENV"
+          echo "REF=$GITHUB_REF" >> "$GITHUB_ENV"
+          echo "ACTOR=$GITHUB_ACTOR" >> "$GITHUB_ENV"
+          echo "WORKFLOW=$GITHUB_WORKFLOW" >> "$GITHUB_ENV"
 
       - name: Parse incoming source_context
         run: |
@@ -214,9 +214,9 @@ jobs:
             SOURCE_REPO=$(echo "$SOURCE_CONTEXT" | jq -r '.package_context.repo')
             SOURCE_RUN_ID=$(echo "$SOURCE_CONTEXT" | jq -r '.package_context.run_id')
             SOURCE_OWNER=$(echo "$SOURCE_CONTEXT" | jq -r '.package_context.repo_owner')
-            echo "SOURCE_REPO=$SOURCE_REPO" >> $GITHUB_ENV
-            echo "SOURCE_RUN_ID=$SOURCE_RUN_ID" >> $GITHUB_ENV
-            echo "SOURCE_OWNER=$SOURCE_ONNER" >> $GITHUB_ENV
+            echo "SOURCE_REPO=$SOURCE_REPO" >> "$GITHUB_ENV"
+            echo "SOURCE_RUN_ID=$SOURCE_RUN_ID" >> "$GITHUB_ENV"
+            echo "SOURCE_OWNER=$SOURCE_ONNER" >> "$GITHUB_ENV"
           fi
           
       - name: Extract authentication token for ${{ env.SOURCE_OWNER }}
