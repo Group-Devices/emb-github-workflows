@@ -200,7 +200,7 @@ jobs:
           echo "SOURCE_KEY=$SOURCE_KEY" >> "$GITHUB_ENV"
           # Extract parts using '-' as separator
           # The trick: split into array
-          IFS='-' read -r SOURCE_REPO SOURCE_RUN_NUMBER SOURCE_RUN_ATTEMPT <<< "$(echo $SOURCE_KEY | awk -F- '{print $1, $2, $3}'"
+          IFS='-' read -r SOURCE_REPO SOURCE_RUN_NUMBER SOURCE_RUN_ATTEMPT <<< "$(echo $SOURCE_KEY)"
           echo "SOURCE_REPO=$SOURCE_REPO" >> "$GITHUB_ENV"
 
       - name: Extract authentication token for Group-Devices
