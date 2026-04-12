@@ -69,6 +69,7 @@ env:
   REPO: ${{ github.repository }}
   PACKAGE_NAME: ${{ github.event.repository.name }}
   ALL_SECRETS: '${{ tojson(secrets) }}'
+  SOURCE_CONTEXT: ${{ github.event.inputs.force-build }}
 
 jobs:
   generate-conan-context:
@@ -193,32 +194,38 @@ jobs:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
 
-      - name: Compute profile hash
-        shell: bash
+      - name: Export GitHub context to environment
         run: |
-          if [ -z "${{ inputs.force-build }}" ]; then
-            SOURCE_KEY="no_source"
-          else
-            SOURCE_KEY="${{ inputs.force-build }}"
-          fi
-          PROFILE_HASH="${{ matrix.profile }}"
-          echo "PROFILE_HASH=$PROFILE_HASH" >> "$GITHUB_ENV"
-          echo "SOURCE_KEY=$SOURCE_KEY" >> "$GITHUB_ENV"
-          # Extract parts using '-' as separator
-          SOURCE_REPO=$(echo "$SOURCE_KEY" | rev | cut -d'-' -f2- | rev)
-          SOURCE_RUN_ID=$(echo "$SOURCE_KEY" | rev | cut -d'-' -f1 | rev)
-          echo "SOURCE_REPO=$SOURCE_REPO" >> "$GITHUB_ENV"
-          echo "SOURCE_RUN_ID=$SOURCE_RUN_ID" >> "$GITHUB_ENV"
+          echo "RUN_ID=$GITHUB_RUN_ID" >> $GITHUB_ENV
+          echo "RUN_NUMBER=$GITHUB_RUN_NUMBER" >> $GITHUB_ENV
+          echo "RUN_ATTEMPT=$GITHUB_RUN_ATTEMPT" >> $GITHUB_ENV
+          echo "REPO=$GITHUB_REPOSITORY" >> $GITHUB_ENV
+          echo "OWNER=${GITHUB_REPOSITORY_OWNER}" >> $GITHUB_ENV
+          echo "SHA=$GITHUB_SHA" >> $GITHUB_ENV
+          echo "REF=$GITHUB_REF" >> $GITHUB_ENV
+          echo "ACTOR=$GITHUB_ACTOR" >> $GITHUB_ENV
+          echo "WORKFLOW=$GITHUB_WORKFLOW" >> $GITHUB_ENV
 
-      - name: Extract authentication token for Group-Devices
+      - name: Parse incoming source_context
+        run: |
+          echo "$SOURCE_CONTEXT" > incoming.json
+          jq . incoming.json 
+          SOURCE_REPO=$(echo "$SOURCE_CONTEXT" | jq -r '.package_context.repo')
+          SOURCE_RUN_ID=$(echo "$SOURCE_CONTEXT" | jq -r '.package_context.run_id')
+          SOURCE_OWNER=$(echo "$SOURCE_CONTEXT" | jq -r '.package_context.repo_owner')
+          echo "SOURCE_REPO=$SOURCE_REPO" >> $GITHUB_ENV
+          echo "SOURCE_RUN_ID=$SOURCE_RUN_ID" >> $GITHUB_ENV
+          echo "SOURCE_OWNER=$SOURCE_ONNER" >> $GITHUB_ENV
+          
+      - name: Extract authentication token for ${{ env.SOURCE_OWNER }}
         uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@main
         with:
-          owner: "Group-Devices"
+          owner: ${{ env.SOURCE_OWNER }}
           json-secrets: ${{ toJson(secrets) }}         
 
       - name: Restore or create lockfile
         run: |
-          LOCK_NAME=lock-${PROFILE_HASH}
+          LOCK_NAME="lock-${{ matrix.profile }}"
           if [ -z "${{ inputs.force-build }}" ] || ! gh run download "$SOURCE_RUN_ID" --repo "$SOURCE_REPO"  --name "$LOCK_NAME"; then
             echo "Creating lockfile locally"
             conan lock create . --profile=${{ matrix.profile }} --lockfile-out=conan-lockfile.json
@@ -227,7 +234,7 @@ jobs:
       - name: Restore Conan cache (optional)
         if: ${{ inputs.use_cache == true }}
         run: |
-          CACHE_NAME=cache-${PROFILE_HASH}.tgz
+          CACHE_NAME="cache-${{ matrix.profile }}.tgz"
           if [ -n "${{ inputs.force-build }}" ] && gh run download "$SOURCE_RUN_ID" --name "$CACHE_NAME" --repo "$SOURCE_REPO" ; then
             conan cache restore "$CACHE_NAME"
           else
@@ -329,7 +336,7 @@ jobs:
       - name: Archive Conan cache
         if: ${{ inputs.use_cache == true }}
         run: |
-          conan cache save --file "cache-${PROFILE_HASH}.tgz"  --no-source "*/*:*"
+          conan cache save --file "cache-${{ matrix.profile }}.tgz"  --no-source "*/*:*"
 
       - if: ${{ inputs.use_cache == true }}
         uses: actions/upload-artifact@v4
@@ -355,12 +362,12 @@ jobs:
         run: |
           owner=$(echo "${{ matrix.collector }}" | cut -d'/' -f1)
           echo "Owner of collector: ${owner}"
-          echo "OWNER=${owner}" >> "$GITHUB_ENV"
+          echo "COLLECTOR_OWNER=${owner}" >> "$GITHUB_ENV"
 
-      - name: Extract authentication token for ${{ env.OWNER }}
+      - name: Extract authentication token for ${{ env.COLLECTOR_OWNER }}
         uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@main
         with:
-          owner: ${{ env.OWNER }}
+          owner: ${{ env.COLLECTOR_OWNER }}
           json-secrets: ${{ toJson(secrets) }}
 
       - name: Check if repository ${{ matrix.collector }} exists
@@ -390,6 +397,26 @@ jobs:
             exit 1
           fi
 
+      - name: Generate full GitHub context for package_context
+        run: |
+          echo '{
+            "package_context": {
+              "repo": "'"$REPO"'",
+              "owner": "'"$OWNER"'",
+              "run_id": '"$RUN_ID"',
+              "run_number": '"$RUN_NUMBER"',
+              "run_attempt": '"$RUN_ATTEMPT"',
+              "sha": "'"$SHA"'",
+              "ref": "'"$REF"'",
+              "actor": "'"$ACTOR"'",
+              "workflow": "'"$WORKFLOW"'"
+            }
+          }' > source_context.json
+
+      - name: Read source context for dispatch
+        id: read_context
+        run: echo "json=$(cat source_context.json)" >> "$GITHUB_OUTPUT"
+
       - name: Dispatch workflow of ${{ matrix.collector }} on ${{ github.ref_name }}
         run: |
           SHORT_SHA=${GITHUB_SHA::7}
@@ -397,7 +424,7 @@ jobs:
             --repo "${{ matrix.collector }}" \
             --ref "${{ github.ref_name }}" \
             --field rebuild_cause="Change in ${{ github.ref_name }} of ${{ github.repository }} (sha $SHORT_SHA)" \
-            --field built_package="${REPO}-${RUN_ID}"             
+            --field built_package="${{ fromJson(steps.read_context.outputs.json) }}"
 
   rebuild-context:
     runs-on: ubuntu-latest
@@ -416,11 +443,11 @@ jobs:
           echo "Context: ${context}"
           OWNER=$(echo "${context}" | cut -d'/' -f1)
           echo "Owner: ${OWNER}"
-          echo "OWNER=${OWNER}" >> "$GITHUB_ENV"
+          echo "CONTEXT_OWNER=${OWNER}" >> "$GITHUB_ENV"
       - name: Extract authentication token
         uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@main
         with:
-          owner: ${{ env.OWNER }}
+          owner: ${{ env.CONTEXT_OWNER }}
           json-secrets: ${{ toJson(secrets) }}
       - name: Call context delivery  
         run: |  
