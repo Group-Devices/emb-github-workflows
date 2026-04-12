@@ -218,8 +218,6 @@ jobs:
           if [ -z "${{ inputs.force-build }}" ] || ! gh run download "$SOURCE_RUN_ID" --repo "$SOURCE_REPO"  --name "$LOCK_NAME"; then
             echo "Creating lockfile locally"
             conan lock create . --profile=${{ matrix.profile }} --lockfile-out=conan-lockfile.json
-          else
-            mv "$LOCK_NAME" conan-lockfile.json
           fi
 
       - name: Restore Conan cache (optional)
