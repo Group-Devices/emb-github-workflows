@@ -210,7 +210,7 @@ jobs:
             jq . incoming.json 
             SOURCE_REPO=$(echo '${{ inputs.force-build }}' | jq -r '.package_context.repo')
             SOURCE_RUN_ID=$(echo '${{ inputs.force-build }}' | jq -r '.package_context.run_id')
-            SOURCE_OWNER=$(echo '${{ inputs.force-build }}' | jq -r '.package_context.repo_owner')
+            SOURCE_OWNER=$(echo '${{ inputs.force-build }}' | jq -r '.package_context.owner')
             { 
               echo "SOURCE_REPO=$SOURCE_REPO"
               echo "SOURCE_RUN_ID=$SOURCE_RUN_ID"
