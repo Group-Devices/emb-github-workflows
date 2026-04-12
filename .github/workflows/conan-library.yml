@@ -230,7 +230,7 @@ jobs:
           CACHE_NAME=cache-${PROFILE_HASH}.tar.gz
           CONAN_CACHE_DIR=$(conan config home)          
           if [ -n "${{ inputs.force-build }}" ] && gh run download "$SOURCE_RUN_ID" --name "$CACHE_NAME" --repo "$SOURCE_REPO" ; then
-            tar -xzf "$CACHE_NAME" -C "$CONAN_CACHE_DIR"
+            conan cache restore "$CACHE_NAME"
           else
             echo "Cache not found or no force-build, skipping restore"
           fi
@@ -330,9 +330,7 @@ jobs:
       - name: Archive Conan cache
         if: ${{ inputs.use_cache == true }}
         run: |
-          CONAN_CACHE_DIR=$(conan config home)
-          echo "Conan cache directory: $CONAN_CACHE_DIR"
-          tar -czf "cache-${PROFILE_HASH}.tar.gz" -C "$CONAN_CACHE_DIR" .
+          conan cache save "cache-${PROFILE_HASH}.tar.gz" .
 
       - if: ${{ inputs.use_cache == true }}
         uses: actions/upload-artifact@v4
