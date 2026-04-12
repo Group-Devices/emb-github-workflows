@@ -229,7 +229,7 @@ jobs:
         run: |
           CACHE_NAME=cache-${PROFILE_HASH}.tgz
           if [ -n "${{ inputs.force-build }}" ] && gh run download "$SOURCE_RUN_ID" --name "$CACHE_NAME" --repo "$SOURCE_REPO" ; then
-            conan cache restore --archive "$CACHE_NAME"
+            conan cache restore "$CACHE_NAME"
           else
             echo "Cache not found or no force-build, skipping restore"
           fi
@@ -329,7 +329,7 @@ jobs:
       - name: Archive Conan cache
         if: ${{ inputs.use_cache == true }}
         run: |
-          conan cache save --file "cache-${PROFILE_HASH}.tgz"
+          conan cache save --file "cache-${PROFILE_HASH}.tgz" "*"
 
       - if: ${{ inputs.use_cache == true }}
         uses: actions/upload-artifact@v4
