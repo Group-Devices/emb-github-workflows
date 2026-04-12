@@ -215,7 +215,7 @@ jobs:
       - name: Restore or create lockfile
         run: |
           LOCK_NAME=lock-${PROFILE_HASH}
-          if [ -z "${{ inputs.force-build }}" ] || ! gh run download "$LOCK_NAME" --repo "$SOURCE_REPO" ; then
+          if [ -z "${{ inputs.force-build }}" ] || ! gh run download "$SOURCE_RUN_ID" --repo "$SOURCE_REPO"  --name "$LOCK_NAME"; then
             echo "Creating lockfile locally"
             conan lock create . --profile=${{ matrix.profile }} --lockfile-out=conan-lockfile.json
           else
@@ -227,7 +227,7 @@ jobs:
         run: |
           CACHE_NAME=cache-${PROFILE_HASH}.tar.gz
           CONAN_CACHE_DIR=$(conan config home)          
-          if [ -n "${{ inputs.force-build }}" ] && gh run download "$CACHE_NAME" --repo "$SOURCE_REPO" ; then
+          if [ -n "${{ inputs.force-build }}" ] && gh run download "$SOURCE_RUN_ID" --name "$CACHE_NAME" --repo "$SOURCE_REPO" ; then
             tar -xzf "$CACHE_NAME" -C "$CONAN_CACHE_DIR"
           else
             echo "Cache not found or no force-build, skipping restore"
