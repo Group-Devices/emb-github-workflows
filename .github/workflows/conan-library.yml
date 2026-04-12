@@ -423,7 +423,7 @@ jobs:
       - name: Read JSON as single line
         id: read_source_context
         run: |
-          JSON=$(cat artifacts/source_context.json | jq -c .)
+          JSON=$(cat source_context.json | jq -c .)
           echo "json=$JSON" >> $GITHUB_OUTPUT
       
       - name: Dispatch workflow of ${{ matrix.collector }} on ${{ github.ref_name }}
