@@ -208,14 +208,16 @@ jobs:
 
       - name: Parse incoming source_context
         run: |
-          echo "$SOURCE_CONTEXT" > incoming.json
-          jq . incoming.json 
-          SOURCE_REPO=$(echo "$SOURCE_CONTEXT" | jq -r '.package_context.repo')
-          SOURCE_RUN_ID=$(echo "$SOURCE_CONTEXT" | jq -r '.package_context.run_id')
-          SOURCE_OWNER=$(echo "$SOURCE_CONTEXT" | jq -r '.package_context.repo_owner')
-          echo "SOURCE_REPO=$SOURCE_REPO" >> $GITHUB_ENV
-          echo "SOURCE_RUN_ID=$SOURCE_RUN_ID" >> $GITHUB_ENV
-          echo "SOURCE_OWNER=$SOURCE_ONNER" >> $GITHUB_ENV
+          if [ -n "${{ inputs.force-build }}" ]; then
+            echo "$SOURCE_CONTEXT" > incoming.json
+            jq . incoming.json 
+            SOURCE_REPO=$(echo "$SOURCE_CONTEXT" | jq -r '.package_context.repo')
+            SOURCE_RUN_ID=$(echo "$SOURCE_CONTEXT" | jq -r '.package_context.run_id')
+            SOURCE_OWNER=$(echo "$SOURCE_CONTEXT" | jq -r '.package_context.repo_owner')
+            echo "SOURCE_REPO=$SOURCE_REPO" >> $GITHUB_ENV
+            echo "SOURCE_RUN_ID=$SOURCE_RUN_ID" >> $GITHUB_ENV
+            echo "SOURCE_OWNER=$SOURCE_ONNER" >> $GITHUB_ENV
+          fi
           
       - name: Extract authentication token for ${{ env.SOURCE_OWNER }}
         uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@main
