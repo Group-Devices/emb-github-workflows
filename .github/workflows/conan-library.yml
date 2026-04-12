@@ -198,6 +198,12 @@ jobs:
           echo "PROFILE_HASH=$PROFILE_HASH" >> "$GITHUB_ENV"
           echo "SOURCE_KEY=$SOURCE_KEY" >> "$GITHUB_ENV"
 
+      - name: Extract authentication token for Group-Devices
+        uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@main
+        with:
+          owner: "Group-Devices"
+          json-secrets: ${{ toJson(secrets) }}         
+
       - name: Restore or create lockfile
         run: |
           LOCK_NAME=lock-${SOURCE_KEY}-${PROFILE_HASH}.json
