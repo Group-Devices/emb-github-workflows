@@ -406,24 +406,26 @@ jobs:
 
       - name: Generate full GitHub context for package_context
         run: |
-          echo '{
-            "package_context": {
-              "repo": "'"$REPO"'",
-              "owner": "'"$OWNER"'",
-              "run_id": '"$RUN_ID"',
-              "run_number": '"$RUN_NUMBER"',
-              "run_attempt": '"$RUN_ATTEMPT"',
-              "sha": "'"$SHA"'",
-              "ref": "'"$REF"'",
-              "actor": "'"$ACTOR"'",
-              "workflow": "'"$WORKFLOW"'"
+          jq -n --compact-output '{
+            package_context: {
+              repo: "'"${GITHUB_REPOSITORY}"'",
+              owner: "'"${GITHUB_REPOSITORY_OWNER}"'",
+              run_id: '"$GITHUB_RUN_ID"',
+              run_number: '"$GITHUB_RUN_NUMBER"',
+              run_attempt: '"$GITHUB_RUN_ATTEMPT"',
+              sha: "'"${GITHUB_SHA}"'",
+              ref: "'"${GITHUB_REF}"'",
+              actor: "'"${GITHUB_ACTOR}"'",
+              workflow: "'"${GITHUB_WORKFLOW}"'"
             }
-          }' > source_context.json
+          }' > source_context.json  
 
-      - name: Read source context for dispatch
-        id: read_context
-        run: echo "json=$(cat source_context.json)" >> "$GITHUB_OUTPUT"
-
+      - name: Read JSON as single line
+        id: read_source_context
+        run: |
+          JSON=$(cat artifacts/source_context.json | jq -c .)
+          echo "json=$JSON" >> $GITHUB_OUTPUT
+      
       - name: Dispatch workflow of ${{ matrix.collector }} on ${{ github.ref_name }}
         run: |
           SHORT_SHA=${GITHUB_SHA::7}
@@ -431,7 +433,7 @@ jobs:
             --repo "${{ matrix.collector }}" \
             --ref "${{ github.ref_name }}" \
             --field rebuild_cause="Change in ${{ github.ref_name }} of ${{ github.repository }} (sha $SHORT_SHA)" \
-            --field built_package="${{ fromJson(steps.read_context.outputs.json) }}"
+            --field built_package=${{ fromJson(steps.read_source_context.outputs.json) }}
 
   rebuild-context:
     runs-on: ubuntu-latest
