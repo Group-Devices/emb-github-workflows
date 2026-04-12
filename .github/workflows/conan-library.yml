@@ -56,7 +56,7 @@ on:
       use_cache:
         required: false
         type: boolean
-        default: false
+        default: true
 
 
 env:
