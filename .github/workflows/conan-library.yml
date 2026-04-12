@@ -204,14 +204,14 @@ jobs:
             echo "WORKFLOW=$GITHUB_WORKFLOW"
           } >> "$GITHUB_ENV"
 
-      - if: github.event.inputs.source_context != ''
+      - if: github.event.inputs.force-build != ''
         name: Parse incoming source_context
         run: |
-            echo '${{ github.event.inputs.source_context }}' > incoming.json
+            echo '${{ github.event.inputs.force-build }}' > incoming.json
             jq . incoming.json 
-            SOURCE_REPO=$(echo '${{ github.event.inputs.source_context }}' | jq -r '.package_context.repo')
-            SOURCE_RUN_ID=$(echo '${{ github.event.inputs.source_context }}' | jq -r '.package_context.run_id')
-            SOURCE_OWNER=$(echo '${{ github.event.inputs.source_context }}' | jq -r '.package_context.repo_owner')
+            SOURCE_REPO=$(echo '${{ github.event.inputs.force-build }}' | jq -r '.package_context.repo')
+            SOURCE_RUN_ID=$(echo '${{ github.event.inputs.force-build }}' | jq -r '.package_context.run_id')
+            SOURCE_OWNER=$(echo '${{ github.event.inputs.force-build }}' | jq -r '.package_context.repo_owner')
             { 
               echo "SOURCE_REPO=$SOURCE_REPO"
               echo "SOURCE_RUN_ID=$SOURCE_RUN_ID"
