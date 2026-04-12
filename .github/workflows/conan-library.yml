@@ -197,6 +197,10 @@ jobs:
           PROFILE_HASH="${{ matrix.profile }}"
           echo "PROFILE_HASH=$PROFILE_HASH" >> "$GITHUB_ENV"
           echo "SOURCE_KEY=$SOURCE_KEY" >> "$GITHUB_ENV"
+          # Extract parts using '-' as separator
+          # The trick: split into array
+          IFS='-' read -r SOURCE_REPO SOURCE_RUN_NUMBER SOURCE_RUN_ATTEMPT <<< "$(echo $SOURCE_KEY | awk -F- '{print $1, $2, $3}')"
+          echo "SOURCE_REPO=$SOURCE_REPO" >> "$GITHUB_ENV"
 
       - name: Extract authentication token for Group-Devices
         uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@main
@@ -207,7 +211,7 @@ jobs:
       - name: Restore or create lockfile
         run: |
           LOCK_NAME=lock-${SOURCE_KEY}-${PROFILE_HASH}.json
-          if [ -z "${{ inputs.force-build }}" ] || ! gh run download "$LOCK_NAME"; then
+          if [ -z "${{ inputs.force-build }}" ] || ! gh run download "$LOCK_NAME" --repo "$OWNER/$SOURCE_REPO" ; then
             echo "Creating lockfile locally"
             conan lock create . --profile=${{ matrix.profile }} --lockfile-out=conan-lockfile.json
           else
