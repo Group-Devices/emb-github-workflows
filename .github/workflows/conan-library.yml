@@ -223,7 +223,8 @@ jobs:
             } >> "$GITHUB_ENV"
           fi
           
-      - name: Extract authentication token for ${{ env.SOURCE_OWNER }}
+      - if: ${{ env.SOURCE_OWNER != '' }}
+        name: Extract authentication token for ${{ env.SOURCE_OWNER }}
         uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@main
         with:
           owner: ${{ env.SOURCE_OWNER }}
