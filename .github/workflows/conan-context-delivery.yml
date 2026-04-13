@@ -466,7 +466,7 @@ jobs:
           done < tmp_input
           printf 'collector requires %s\n' "$*"
           if [ -f "conan-lockfile.json" ]; then
-            set -- "$@" -l conan-lockfile.json
+            set -- "$@" -l conan-lockfile.json --lockfile-partial
           fi
           ${{ env.CONAN }} remote disable "${{ needs.extract-collectors.outputs.conan_release_remote_name}}"
           ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer release --deployer-folder=to_conan
@@ -662,7 +662,7 @@ jobs:
           done < tmp_input
           printf 'collector requires %s\n' "$*"
           if [ -f "conan-lockfile.json" ]; then
-            set -- "$@" -l conan-lockfile.json
+            set -- "$@" -l conan-lockfile.json --lockfile-partial
           fi
           ${{ env.CONAN }} install "$@" -pr:h default --deployer docs --deployer-folder=to_docs
 
