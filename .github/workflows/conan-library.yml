@@ -29,7 +29,12 @@ on:
         type: boolean
         default: false
       force-build:  
-        description: 'forced build package'
+        description: 'Legacy source build context payload'
+        required: false
+        type: string
+        default: ''
+      source-build-context:
+        description: 'Source build context payload'
         required: false
         type: string
         default: ''
@@ -206,15 +211,26 @@ jobs:
 
       - name: Parse incoming source_context
         run: |
-            echo '${{ inputs.force-build }}' > incoming.json
-            jq . incoming.json 
-            SOURCE_REPO=$(echo '${{ inputs.force-build }}' | jq -r '.package_context.repo')
-            SOURCE_RUN_ID=$(echo '${{ inputs.force-build }}' | jq -r '.package_context.run_id')
-            SOURCE_OWNER=$(echo '${{ inputs.force-build }}' | jq -r '.package_context.owner')
-            { 
+            if [ -n '${{ inputs.source-build-context }}' ]; then
+              incoming_context='${{ inputs.source-build-context }}'
+            else
+              incoming_context='${{ inputs.force-build }}'
+            fi
+            echo "$incoming_context" > incoming.json
+            if [ -n "$incoming_context" ]; then
+              jq . incoming.json
+              SOURCE_REPO=$(echo "$incoming_context" | jq -r '.package_context.repo')
+              SOURCE_RUN_ID=$(echo "$incoming_context" | jq -r '.package_context.run_id')
+              SOURCE_OWNER=$(echo "$incoming_context" | jq -r '.package_context.owner')
+            else
+              SOURCE_REPO=''
+              SOURCE_RUN_ID=''
+              SOURCE_OWNER=''
+            fi
+            {
               echo "SOURCE_REPO=$SOURCE_REPO"
               echo "SOURCE_RUN_ID=$SOURCE_RUN_ID"
-              echo "SOURCE_OWNER=$SOURCE_OWNER" 
+              echo "SOURCE_OWNER=$SOURCE_OWNER"
             } >> "$GITHUB_ENV"
           
       - name: Restore Conan build state
@@ -388,11 +404,12 @@ jobs:
             } 
           }')
           echo "context pass $JSON"
-          echo "command gh workflow run ${TARGET_WORKFLOW} --repo ${{ matrix.collector }} --ref ${{ github.ref_name }} --field built_package=$JSON"
+          echo "command gh workflow run ${TARGET_WORKFLOW} --repo ${{ matrix.collector }} --ref ${{ github.ref_name }} --field source_build_context=$JSON --field built_package=$JSON"
           gh workflow run "${TARGET_WORKFLOW}" \
             --repo "${{ matrix.collector }}" \
             --ref "${{ github.ref_name }}" \
             --field rebuild_cause="Change in ${{ github.ref_name }} of ${{ github.repository }} (sha $SHORT_SHA)" \
+            --field source_build_context="$JSON" \
             --field built_package="$JSON"            
 
   rebuild-context:
