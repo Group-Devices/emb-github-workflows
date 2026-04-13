@@ -419,6 +419,15 @@ jobs:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
 
+      - name: Resolve Conan cache usage
+        run: |
+          context_use_cache=$(yq e '.build.use_cache // .use_cache // false' "${CONAN_CONTEXT_PATH}")
+          if [ "$context_use_cache" = 'true' ]; then
+            echo "USE_CACHE=true" >> "$GITHUB_ENV"
+          else
+            echo "USE_CACHE=false" >> "$GITHUB_ENV"
+          fi
+
       - name: Restore Conan build state
         uses: Group-Devices/emb-github-workflows/.github/actions/restore-conan-build-state@release/v1.0
         with:
@@ -429,6 +438,7 @@ jobs:
           source-owner: ${{ inputs.source_owner }}
           json-secrets: ${{ toJson(secrets) }}
           profile: ${{ matrix.profile }}
+          use-cache: ${{ env.USE_CACHE }}
 
       - name: Add original repository in configuration
         run: |
@@ -642,6 +652,14 @@ jobs:
         with:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
+      - name: Resolve Conan cache usage
+        run: |
+          context_use_cache=$(yq e '.build.use_cache // .use_cache // false' "${CONAN_CONTEXT_PATH}")
+          if [ "$context_use_cache" = 'true' ]; then
+            echo "USE_CACHE=true" >> "$GITHUB_ENV"
+          else
+            echo "USE_CACHE=false" >> "$GITHUB_ENV"
+          fi
       - name: Restore Conan build state
         uses: Group-Devices/emb-github-workflows/.github/actions/restore-conan-build-state@release/v1.0
         with:
@@ -652,6 +670,7 @@ jobs:
           source-owner: ${{ inputs.source_owner }}
           json-secrets: ${{ toJson(secrets) }}
           profile: default
+          use-cache: ${{ env.USE_CACHE }}
       - name: Collect docs delivery
         run: |
           set --
