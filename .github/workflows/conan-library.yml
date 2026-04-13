@@ -61,6 +61,7 @@ on:
 
 
 env:
+  ALL_SECRETS: ${{ toJson(secrets) }}
   SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
   SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
   CONAN_CONTEXT_PATH: ".conan-context/conan-context.yml"
