@@ -309,7 +309,8 @@ jobs:
           path: build-${{ matrix.profile }}.json
           retention-days: 2
 
-      - name: Upload Conan build state
+      - if: ${{ github.event_name != 'pull_request' }}
+        name: Upload Conan build state
         uses: Group-Devices/emb-github-workflows/.github/actions/upload-conan-build-state@release/v1.0
         with:
           profile: ${{ matrix.profile }}
