@@ -68,6 +68,7 @@ env:
   RUN_ATTEMPT: ${{ github.run_attempt }}
   REPO: ${{ github.repository }}
   PACKAGE_NAME: ${{ github.event.repository.name }}
+  ALL_SECRETS: '${{ tojson(secrets) }}'
 
 jobs:
   generate-conan-context:
