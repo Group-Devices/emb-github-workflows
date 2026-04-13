@@ -195,6 +195,15 @@ jobs:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
 
+      - name: Resolve Conan cache usage
+        run: |
+          context_use_cache=$(yq e '.build.use_cache // .use_cache // false' "${CONAN_CONTEXT_PATH}")
+          if [ "${{ inputs.use_cache }}" = 'true' ] || [ "$context_use_cache" = 'true' ]; then
+            echo "USE_CACHE=true" >> "$GITHUB_ENV"
+          else
+            echo "USE_CACHE=false" >> "$GITHUB_ENV"
+          fi
+
       - name: Export GitHub context to environment
         run: |
           {
@@ -215,7 +224,7 @@ jobs:
           source-build-context: ${{ inputs.source-build-context != '' && inputs.source-build-context || inputs.force-build }}
           json-secrets: ${{ toJson(secrets) }}
           profile: ${{ matrix.profile }}
-          use-cache: ${{ inputs.use_cache }}
+          use-cache: ${{ env.USE_CACHE }}
           create-lockfile-command: conan lock create . --profile=${{ matrix.profile }} --lockfile-out=conan-lockfile.json
 
       - name: Conan create
@@ -307,7 +316,7 @@ jobs:
         uses: Group-Devices/emb-github-workflows/.github/actions/upload-conan-build-state@release/v1.0
         with:
           profile: ${{ matrix.profile }}
-          use-cache: ${{ inputs.use_cache }}
+          use-cache: ${{ env.USE_CACHE }}
           
   rebuild-collectors:
     runs-on: ubuntu-latest
