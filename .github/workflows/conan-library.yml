@@ -436,8 +436,10 @@ jobs:
           else
             SOURCE_BUILD_CONTEXT=$(jq -n --argjson collector_context "$COLLECTOR_JSON" '{collector_context: $collector_context}')
           fi
+          COLLECTOR_REPO=$(echo "$SOURCE_BUILD_CONTEXT" | jq -r '.collector_context.repo // "unknown-collector"')
+          PACKAGE_REPO=$(echo "$SOURCE_BUILD_CONTEXT" | jq -r '.package_context.repo // "unknown-package"')
           gh workflow run "delivery.yml" \
             --repo "${context}" \
             --ref "${{ github.ref_name }}" \
-            --field rebuild_cause="Rebuild context after collector rebuild (${context}) due to package change in ${{ github.repository }} on ${{ github.ref_name }}" \
+            --field rebuild_cause="Rebuild context after collector rebuild (${COLLECTOR_REPO}) due to package change in ${PACKAGE_REPO} on ${{ github.ref_name }}" \
             --field source_build_context="$SOURCE_BUILD_CONTEXT"
