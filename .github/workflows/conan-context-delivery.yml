@@ -466,14 +466,12 @@ jobs:
           done < tmp_input
           printf 'collector requires %s\n' "$*"
           if [ -f "conan-lockfile.json" ]; then
-            LOCKFILE="-l conan-lockfile.json"
-          else
-            LOCKFILE=""
+            set -- "$@" -l conan-lockfile.json
           fi
           ${{ env.CONAN }} remote disable "${{ needs.extract-collectors.outputs.conan_release_remote_name}}"
-          ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer release --deployer-folder=to_conan "$LOCKFILE" 
+          ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer release --deployer-folder=to_conan
           if [ "${{needs.extract-collectors.outputs.deliverable}}" = 'true' ]; then
-            ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer delivery --deployer-folder=to_apt "$LOCKFILE"
+            ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer delivery --deployer-folder=to_apt
           fi
           ${{ env.CONAN }} remote enable "${{ needs.extract-collectors.outputs.conan_release_remote_name}}"
 
@@ -664,11 +662,9 @@ jobs:
           done < tmp_input
           printf 'collector requires %s\n' "$*"
           if [ -f "conan-lockfile.json" ]; then
-            LOCKFILE="-l conan-lockfile.json"
-          else
-            LOCKFILE=""
+            set -- "$@" -l conan-lockfile.json
           fi
-          ${{ env.CONAN }} install "$@" -pr:h default --deployer docs --deployer-folder=to_docs "$LOCKFILE"
+          ${{ env.CONAN }} install "$@" -pr:h default --deployer docs --deployer-folder=to_docs
 
       - name: Install docs generator tools
         run: |
