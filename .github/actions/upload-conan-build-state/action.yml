@@ -1,0 +1,35 @@
+name: Upload Conan Build State
+description: Upload the shared lockfile and optional Conan cache with the canonical artifact names.
+
+inputs:
+  profile:
+    description: Conan profile name used to name artifacts.
+    required: true
+  use-cache:
+    description: Archive and upload Conan cache artifact.
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Upload lockfile
+      uses: actions/upload-artifact@v4
+      with:
+        name: lock-${{ inputs.profile }}
+        path: conan-lockfile.json
+        retention-days: 1
+
+    - if: ${{ inputs.use-cache == 'true' }}
+      name: Archive Conan cache
+      shell: bash
+      run: |
+        conan cache save --file "cache-${{ inputs.profile }}.tgz" --no-source "*/*:*"
+
+    - if: ${{ inputs.use-cache == 'true' }}
+      name: Upload Conan cache
+      uses: actions/upload-artifact@v4
+      with:
+        name: cache-${{ inputs.profile }}.tgz
+        path: cache-${{ inputs.profile }}.tgz
+        retention-days: 1

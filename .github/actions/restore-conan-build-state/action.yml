@@ -1,0 +1,84 @@
+name: Restore Conan Build State
+description: Restore the shared lockfile and optional Conan cache from a source workflow run.
+
+inputs:
+  source-repo:
+    description: Repository containing the source workflow run.
+    required: false
+    default: ''
+  source-run-id:
+    description: Workflow run id to download artifacts from.
+    required: false
+    default: ''
+  source-owner:
+    description: GitHub owner used to resolve the authentication token.
+    required: false
+    default: ''
+  json-secrets:
+    description: Serialized GitHub secrets object.
+    required: false
+    default: ''
+  profile:
+    description: Conan profile name used to name artifacts.
+    required: true
+  use-cache:
+    description: Restore Conan cache artifact in addition to the lockfile.
+    required: false
+    default: 'false'
+  create-lockfile-command:
+    description: Optional shell command used when the lockfile cannot be restored.
+    required: false
+    default: ''
+
+outputs:
+  lockfile-restored:
+    description: Whether the lockfile was downloaded from the source run.
+    value: ${{ steps.restore-lock.outputs.lockfile-restored }}
+  cache-restored:
+    description: Whether the Conan cache was downloaded from the source run.
+    value: ${{ steps.restore-cache.outputs.cache-restored }}
+
+runs:
+  using: composite
+  steps:
+    - if: ${{ inputs.source-owner != '' }}
+      name: Authenticate gh for source owner
+      uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@release/v1.0
+      with:
+        owner: ${{ inputs.source-owner }}
+        json-secrets: ${{ inputs.json-secrets }}
+
+    - id: restore-lock
+      name: Restore or create lockfile
+      shell: bash
+      run: |
+        lock_name="lock-${{ inputs.profile }}"
+        restored=false
+
+        if [ -n "${{ inputs.source-repo }}" ] && [ -n "${{ inputs.source-run-id }}" ]           && gh run download "${{ inputs.source-run-id }}" --repo "${{ inputs.source-repo }}" --name "${lock_name}"; then
+          restored=true
+        elif [ -n "${{ inputs.create-lockfile-command }}" ]; then
+          echo "Creating lockfile locally"
+          eval "${{ inputs.create-lockfile-command }}"
+        else
+          echo "Lockfile not restored"
+        fi
+
+        echo "lockfile-restored=${restored}" >> "$GITHUB_OUTPUT"
+
+    - id: restore-cache
+      if: ${{ inputs.use-cache == 'true' }}
+      name: Restore Conan cache
+      shell: bash
+      run: |
+        cache_name="cache-${{ inputs.profile }}.tgz"
+        restored=false
+
+        if [ -n "${{ inputs.source-repo }}" ] && [ -n "${{ inputs.source-run-id }}" ]           && gh run download "${{ inputs.source-run-id }}" --repo "${{ inputs.source-repo }}" --name "${cache_name}"; then
+          conan cache restore "${cache_name}"
+          restored=true
+        else
+          echo "Cache not restored"
+        fi
+
+        echo "cache-restored=${restored}" >> "$GITHUB_OUTPUT"

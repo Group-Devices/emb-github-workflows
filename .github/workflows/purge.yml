@@ -262,7 +262,7 @@ jobs:
           git config --global --add safe.directory "/__w/${repo}/${repo}"
 
       - name: Configure conan
-        uses: Group-Devices/emb-github-workflows/.github/actions/configure-conan@main
+        uses: Group-Devices/emb-github-workflows/.github/actions/configure-conan@release/v1.0
         with:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}

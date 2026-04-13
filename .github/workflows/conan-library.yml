@@ -83,7 +83,7 @@ jobs:
       collectors-list: ${{ steps.generate-conan-context.outputs.collectors-list }}
     steps:
       - uses: actions/checkout@v6
-      - uses: Group-Devices/emb-github-workflows/.github/actions/generate-conan-context@main
+      - uses: Group-Devices/emb-github-workflows/.github/actions/generate-conan-context@release/v1.0
         id: generate-conan-context
         with:
           json-secrets: ${{ toJson(secrets) }}
@@ -106,7 +106,7 @@ jobs:
           name: conan-context
           path: .conan-context
       - name: Configure Conan
-        uses: Group-Devices/emb-github-workflows/.github/actions/configure-conan@main
+        uses: Group-Devices/emb-github-workflows/.github/actions/configure-conan@release/v1.0
         with:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
@@ -185,7 +185,7 @@ jobs:
           name: conan-context
           path: .conan-context
       - name: Configure Conan
-        uses: Group-Devices/emb-github-workflows/.github/actions/configure-conan@main
+        uses: Group-Devices/emb-github-workflows/.github/actions/configure-conan@release/v1.0
         with:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
@@ -217,30 +217,16 @@ jobs:
               echo "SOURCE_OWNER=$SOURCE_OWNER" 
             } >> "$GITHUB_ENV"
           
-      - if: ${{ env.SOURCE_OWNER != '' }}
-        name: Extract authentication token for ${{ env.SOURCE_OWNER }}
-        uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@main
+      - name: Restore Conan build state
+        uses: Group-Devices/emb-github-workflows/.github/actions/restore-conan-build-state@release/v1.0
         with:
-          owner: ${{ env.SOURCE_OWNER }}
-          json-secrets: ${{ toJson(secrets) }}         
-
-      - name: Restore or create lockfile
-        run: |
-          LOCK_NAME="lock-${{ matrix.profile }}"
-          if [ -z "${{ env.SOURCE_REPO }}" ] || ! gh run download "$SOURCE_RUN_ID" --repo "$SOURCE_REPO"  --name "$LOCK_NAME"; then
-            echo "Creating lockfile locally"
-            conan lock create . --profile=${{ matrix.profile }} --lockfile-out=conan-lockfile.json
-          fi
-
-      - name: Restore Conan cache (optional)
-        if: ${{ inputs.use_cache == true }}
-        run: |
-          CACHE_NAME="cache-${{ matrix.profile }}.tgz"
-          if [ -n "${{ env.SOURCE_REPO }}" ] && gh run download "$SOURCE_RUN_ID" --name "$CACHE_NAME" --repo "$SOURCE_REPO" ; then
-            conan cache restore "$CACHE_NAME"
-          else
-            echo "Cache not found or no force-build, skipping restore"
-          fi
+          source-repo: ${{ env.SOURCE_REPO }}
+          source-run-id: ${{ env.SOURCE_RUN_ID }}
+          source-owner: ${{ env.SOURCE_OWNER }}
+          json-secrets: ${{ toJson(secrets) }}
+          profile: ${{ matrix.profile }}
+          use-cache: ${{ inputs.use_cache }}
+          create-lockfile-command: conan lock create . --profile=${{ matrix.profile }} --lockfile-out=conan-lockfile.json
 
       - name: Conan create
         shell: bash
@@ -327,24 +313,11 @@ jobs:
           path: build-${{ matrix.profile }}.json
           retention-days: 2
 
-      - name: Upload lockfile
-        uses: actions/upload-artifact@v4
+      - name: Upload Conan build state
+        uses: Group-Devices/emb-github-workflows/.github/actions/upload-conan-build-state@release/v1.0
         with:
-          name: lock-${{ matrix.profile }}
-          path: conan-lockfile.json
-          retention-days: 1
-
-      - name: Archive Conan cache
-        if: ${{ inputs.use_cache == true }}
-        run: |
-          conan cache save --file "cache-${{ matrix.profile }}.tgz"  --no-source "*/*:*"
-
-      - if: ${{ inputs.use_cache == true }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: cache-${{ matrix.profile }}.tgz
-          path: cache-${{ matrix.profile }}.tgz
-          retention-days: 1
+          profile: ${{ matrix.profile }}
+          use-cache: ${{ inputs.use_cache }}
           
   rebuild-collectors:
     runs-on: ubuntu-latest
@@ -366,7 +339,7 @@ jobs:
           echo "COLLECTOR_OWNER=${owner}" >> "$GITHUB_ENV"
 
       - name: Extract authentication token for ${{ env.COLLECTOR_OWNER }}
-        uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@main
+        uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@release/v1.0
         with:
           owner: ${{ env.COLLECTOR_OWNER }}
           json-secrets: ${{ toJson(secrets) }}
@@ -441,7 +414,7 @@ jobs:
           echo "Owner: ${OWNER}"
           echo "CONTEXT_OWNER=${OWNER}" >> "$GITHUB_ENV"
       - name: Extract authentication token
-        uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@main
+        uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@release/v1.0
         with:
           owner: ${{ env.CONTEXT_OWNER }}
           json-secrets: ${{ toJson(secrets) }}
@@ -450,4 +423,7 @@ jobs:
           context=$(yq e '.bundle' "${CONAN_CONTEXT_PATH}")
           gh workflow run "delivery.yml" \
             --repo "${context}" \
-            --ref "${{ github.ref_name }}"     
+            --ref "${{ github.ref_name }}" \
+            --field source_repo="${GITHUB_REPOSITORY}" \
+            --field source_run_id="${GITHUB_RUN_ID}" \
+            --field source_owner="${GITHUB_REPOSITORY_OWNER}"
