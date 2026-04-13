@@ -33,6 +33,10 @@ on:
         required: false
         type: string
         default: ''
+      source_build_context:
+        required: false
+        type: string
+        default: ''
 
 env:
   CONAN_CONTEXT_PATH: conan-context.yml
@@ -418,6 +422,8 @@ jobs:
       - name: Restore Conan build state
         uses: Group-Devices/emb-github-workflows/.github/actions/restore-conan-build-state@release/v1.0
         with:
+          source-build-context: ${{ inputs.source_build_context }}
+          context-key: collector_context
           source-repo: ${{ inputs.source_repo }}
           source-run-id: ${{ inputs.source_run_id }}
           source-owner: ${{ inputs.source_owner }}
@@ -641,6 +647,8 @@ jobs:
       - name: Restore Conan build state
         uses: Group-Devices/emb-github-workflows/.github/actions/restore-conan-build-state@release/v1.0
         with:
+          source-build-context: ${{ inputs.source_build_context }}
+          context-key: collector_context
           source-repo: ${{ inputs.source_repo }}
           source-run-id: ${{ inputs.source_run_id }}
           source-owner: ${{ inputs.source_owner }}

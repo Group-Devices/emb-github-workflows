@@ -209,36 +209,10 @@ jobs:
             echo "WORKFLOW=$GITHUB_WORKFLOW"
           } >> "$GITHUB_ENV"
 
-      - name: Parse incoming source_context
-        run: |
-            if [ -n '${{ inputs.source-build-context }}' ]; then
-              incoming_context='${{ inputs.source-build-context }}'
-            else
-              incoming_context='${{ inputs.force-build }}'
-            fi
-            echo "$incoming_context" > incoming.json
-            if [ -n "$incoming_context" ]; then
-              jq . incoming.json
-              SOURCE_REPO=$(echo "$incoming_context" | jq -r '.package_context.repo')
-              SOURCE_RUN_ID=$(echo "$incoming_context" | jq -r '.package_context.run_id')
-              SOURCE_OWNER=$(echo "$incoming_context" | jq -r '.package_context.owner')
-            else
-              SOURCE_REPO=''
-              SOURCE_RUN_ID=''
-              SOURCE_OWNER=''
-            fi
-            {
-              echo "SOURCE_REPO=$SOURCE_REPO"
-              echo "SOURCE_RUN_ID=$SOURCE_RUN_ID"
-              echo "SOURCE_OWNER=$SOURCE_OWNER"
-            } >> "$GITHUB_ENV"
-          
       - name: Restore Conan build state
         uses: Group-Devices/emb-github-workflows/.github/actions/restore-conan-build-state@release/v1.0
         with:
-          source-repo: ${{ env.SOURCE_REPO }}
-          source-run-id: ${{ env.SOURCE_RUN_ID }}
-          source-owner: ${{ env.SOURCE_OWNER }}
+          source-build-context: ${{ inputs.source-build-context != '' && inputs.source-build-context || inputs.force-build }}
           json-secrets: ${{ toJson(secrets) }}
           profile: ${{ matrix.profile }}
           use-cache: ${{ inputs.use_cache }}
@@ -438,9 +412,25 @@ jobs:
       - name: Call context delivery  
         run: |  
           context=$(yq e '.bundle' "${CONAN_CONTEXT_PATH}")
+          COLLECTOR_JSON=$(jq -n --compact-output '{
+            repo: env.GITHUB_REPOSITORY,
+            owner: env.GITHUB_REPOSITORY_OWNER,
+            run_id: env.GITHUB_RUN_ID,
+            run_number: env.GITHUB_RUN_NUMBER,
+            run_attempt: env.GITHUB_RUN_ATTEMPT,
+            sha: env.GITHUB_SHA,
+            ref: env.GITHUB_REF,
+            actor: env.GITHUB_ACTOR,
+            workflow: env.GITHUB_WORKFLOW
+          }')
+          if [ -n '${{ inputs.source-build-context }}' ]; then
+            SOURCE_BUILD_CONTEXT=$(echo '${{ inputs.source-build-context }}' | jq -c --argjson collector_context "$COLLECTOR_JSON" '. + {collector_context: $collector_context}')
+          elif [ -n '${{ inputs.force-build }}' ]; then
+            SOURCE_BUILD_CONTEXT=$(echo '${{ inputs.force-build }}' | jq -c --argjson collector_context "$COLLECTOR_JSON" '. + {collector_context: $collector_context}')
+          else
+            SOURCE_BUILD_CONTEXT=$(jq -n --argjson collector_context "$COLLECTOR_JSON" '{collector_context: $collector_context}')
+          fi
           gh workflow run "delivery.yml" \
             --repo "${context}" \
             --ref "${{ github.ref_name }}" \
-            --field source_repo="${GITHUB_REPOSITORY}" \
-            --field source_run_id="${GITHUB_RUN_ID}" \
-            --field source_owner="${GITHUB_REPOSITORY_OWNER}"
+            --field source_build_context="$SOURCE_BUILD_CONTEXT"

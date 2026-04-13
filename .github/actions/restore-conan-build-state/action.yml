@@ -2,6 +2,14 @@ name: Restore Conan Build State
 description: Restore the shared lockfile and optional Conan cache from a source workflow run.
 
 inputs:
+  source-build-context:
+    description: Serialized source build context chain.
+    required: false
+    default: ''
+  context-key:
+    description: Context key to restore from when source-build-context is provided.
+    required: false
+    default: package_context
   source-repo:
     description: Repository containing the source workflow run.
     required: false
@@ -31,6 +39,15 @@ inputs:
     default: ''
 
 outputs:
+  source-repo:
+    description: Resolved source repository.
+    value: ${{ steps.resolve-source.outputs.source-repo }}
+  source-run-id:
+    description: Resolved source run id.
+    value: ${{ steps.resolve-source.outputs.source-run-id }}
+  source-owner:
+    description: Resolved source owner.
+    value: ${{ steps.resolve-source.outputs.source-owner }}
   lockfile-restored:
     description: Whether the lockfile was downloaded from the source run.
     value: ${{ steps.restore-lock.outputs.lockfile-restored }}
@@ -41,11 +58,33 @@ outputs:
 runs:
   using: composite
   steps:
-    - if: ${{ inputs.source-owner != '' }}
+    - id: resolve-source
+      name: Resolve source workflow context
+      shell: bash
+      run: |
+        source_repo='${{ inputs.source-repo }}'
+        source_run_id='${{ inputs.source-run-id }}'
+        source_owner='${{ inputs.source-owner }}'
+
+        if [ -n '${{ inputs.source-build-context }}' ]; then
+          source_context='${{ inputs.source-build-context }}'
+          context_key='${{ inputs.context-key }}'
+          source_repo=$(echo "$source_context" | jq -r --arg key "$context_key" '.[ $key ].repo // .package_context.repo // ""')
+          source_run_id=$(echo "$source_context" | jq -r --arg key "$context_key" '.[ $key ].run_id // .package_context.run_id // ""')
+          source_owner=$(echo "$source_context" | jq -r --arg key "$context_key" '.[ $key ].owner // .package_context.owner // ""')
+        fi
+
+        {
+          echo "source-repo=$source_repo"
+          echo "source-run-id=$source_run_id"
+          echo "source-owner=$source_owner"
+        } >> "$GITHUB_OUTPUT"
+
+    - if: ${{ steps.resolve-source.outputs.source-owner != '' }}
       name: Authenticate gh for source owner
       uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@release/v1.0
       with:
-        owner: ${{ inputs.source-owner }}
+        owner: ${{ steps.resolve-source.outputs.source-owner }}
         json-secrets: ${{ inputs.json-secrets }}
 
     - id: restore-lock
@@ -55,11 +94,12 @@ runs:
         lock_name="lock-${{ inputs.profile }}"
         restored=false
 
-        if [ -n "${{ inputs.source-repo }}" ] && [ -n "${{ inputs.source-run-id }}" ]           && gh run download "${{ inputs.source-run-id }}" --repo "${{ inputs.source-repo }}" --name "${lock_name}"; then
+        if [ -n '${{ steps.resolve-source.outputs.source-repo }}' ] && [ -n '${{ steps.resolve-source.outputs.source-run-id }}' ] \
+          && gh run download '${{ steps.resolve-source.outputs.source-run-id }}' --repo '${{ steps.resolve-source.outputs.source-repo }}' --name "$lock_name"; then
           restored=true
-        elif [ -n "${{ inputs.create-lockfile-command }}" ]; then
+        elif [ -n '${{ inputs.create-lockfile-command }}' ]; then
           echo "Creating lockfile locally"
-          eval "${{ inputs.create-lockfile-command }}"
+          eval '${{ inputs.create-lockfile-command }}'
         else
           echo "Lockfile not restored"
         fi
@@ -74,8 +114,9 @@ runs:
         cache_name="cache-${{ inputs.profile }}.tgz"
         restored=false
 
-        if [ -n "${{ inputs.source-repo }}" ] && [ -n "${{ inputs.source-run-id }}" ]           && gh run download "${{ inputs.source-run-id }}" --repo "${{ inputs.source-repo }}" --name "${cache_name}"; then
-          conan cache restore "${cache_name}"
+        if [ -n '${{ steps.resolve-source.outputs.source-repo }}' ] && [ -n '${{ steps.resolve-source.outputs.source-run-id }}' ] \
+          && gh run download '${{ steps.resolve-source.outputs.source-run-id }}' --repo '${{ steps.resolve-source.outputs.source-repo }}' --name "$cache_name"; then
+          conan cache restore "$cache_name"
           restored=true
         else
           echo "Cache not restored"
