@@ -433,5 +433,5 @@ jobs:
           gh workflow run "delivery.yml" \
             --repo "${context}" \
             --ref "${{ github.ref_name }}" \
-            --field rebuild_cause="Rebuild context after collector rebuild triggered by package change in ${{ github.repository }} on ${{ github.ref_name }}" \
+            --field rebuild_cause="Rebuild context after collector rebuild (${context}) due to package change in ${{ github.repository }} on ${{ github.ref_name }}" \
             --field source_build_context="$SOURCE_BUILD_CONTEXT"
