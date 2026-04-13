@@ -58,10 +58,6 @@ on:
         required: false
         type: boolean
         default: false
-      use_cache:
-        required: false
-        type: boolean
-        default: false
 
 
 env:
@@ -198,7 +194,7 @@ jobs:
       - name: Resolve Conan cache usage
         run: |
           context_use_cache=$(yq e '.build.use_cache // .use_cache // false' "${CONAN_CONTEXT_PATH}")
-          if [ "${{ inputs.use_cache }}" = 'true' ] || [ "$context_use_cache" = 'true' ]; then
+          if [ "$context_use_cache" = 'true' ]; then
             echo "USE_CACHE=true" >> "$GITHUB_ENV"
           else
             echo "USE_CACHE=false" >> "$GITHUB_ENV"
