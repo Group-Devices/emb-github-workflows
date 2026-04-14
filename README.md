@@ -171,3 +171,52 @@ Legacy compatibility is still kept for now:
 - `built_package` in collector workflows
 
 New integrations should use only `source_build_context`.
+
+## Consumer Migration
+
+When moving a package, collector, or context repository to the reusable workflows on `release/v1.0`, the expected migration is:
+
+- switch reusable workflow references from `@main` to `@release/v1.0`
+- use `source_build_context` when dispatching downstream rebuilds
+- keep `built_package` or `force-build` only while older consumers still require them
+- declare `enabled_doxygen = True` in `conanfile.py` for packages that should publish API documentation
+
+Typical migration by repository type:
+
+- package repository:
+  - use `conan-library.yml@release/v1.0`
+  - set `enabled_doxygen = True` when Doxygen output is part of the package contract
+- collector repository:
+  - accept `source_build_context`
+  - keep `built_package` as a temporary compatibility alias if older package workflows still send it
+  - forward `source_build_context` to the reusable workflow
+- context repository:
+  - use `conan-context-delivery.yml@release/v1.0`
+  - forward `source_build_context`
+  - keep wrapper workflow permissions aligned with the reusable workflow requirements
+
+The target state is:
+- one canonical chained payload: `source_build_context`
+- lockfile and optional cache restored from that chained context
+- legacy aliases removed once all consumers have migrated
+
+## Reusable Actions
+
+The repository also contains reusable helper actions used by the workflows.
+
+- `.github/actions/gh-auth-owner`
+  - resolves the GitHub token to use for a given owner and authenticates `gh`
+- `.github/actions/configure-conan`
+  - configures Conan from the selected Conan context package
+- `.github/actions/generate-conan-context`
+  - resolves and materializes the Conan context used by package, collector, and delivery workflows
+- `.github/actions/build-source-build-context`
+  - creates or extends the chained `source_build_context` payload
+- `.github/actions/restore-conan-build-state`
+  - restores the lockfile and optional Conan cache from a previous workflow run
+- `.github/actions/upload-conan-build-state`
+  - uploads the lockfile and optional Conan cache produced by a workflow run
+- `.github/actions/build-bundle-docs`
+  - builds the generated documentation site used by context delivery
+
+These actions exist to keep the reusable workflows focused on orchestration while moving repeated contracts and shell logic into versioned helpers.
