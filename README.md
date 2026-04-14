@@ -169,7 +169,7 @@ Supported modes:
 
 Compatibility:
 - if `build.cache_mode` is absent, the workflows still accept legacy `build.use_cache` or top-level `use_cache`
-- legacy `true` maps to `full`
+- legacy `true` maps to `recipes`
 - legacy `false` maps to `none`
 
 Behavior:

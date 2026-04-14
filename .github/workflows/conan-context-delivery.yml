@@ -425,7 +425,7 @@ jobs:
           if [ -z "$context_cache_mode" ] || [ "$context_cache_mode" = "null" ]; then
             context_use_cache=$(yq e '.build.use_cache // .use_cache // false' "${CONAN_CONTEXT_PATH}")
             if [ "$context_use_cache" = 'true' ]; then
-              context_cache_mode=full
+              context_cache_mode=recipes
             else
               context_cache_mode=none
             fi
@@ -670,7 +670,7 @@ jobs:
           if [ -z "$context_cache_mode" ] || [ "$context_cache_mode" = "null" ]; then
             context_use_cache=$(yq e '.build.use_cache // .use_cache // false' "${CONAN_CONTEXT_PATH}")
             if [ "$context_use_cache" = 'true' ]; then
-              context_cache_mode=full
+              context_cache_mode=recipes
             else
               context_cache_mode=none
             fi
