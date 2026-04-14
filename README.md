@@ -9,6 +9,52 @@ This Github project must be accessible from others repositories of Kuba enterpri
 See https://github.com/Group-Devices/emb-github-workflows/settings/actions
 where **Access** must be **Accessible from repositories in the 'KUBA' enterprise**
 
+## Layered Build
+
+The Conan pipeline is layered so each stage validates a different integration level.
+
+### Package build
+
+The package workflow builds one repository in isolation and publishes its Conan package.
+
+It also emits the build state reused by downstream stages:
+- `source_build_context.package_context`
+- lockfile
+- optional Conan cache
+
+This stage answers:
+- can this package be built and published on its own
+
+### Collector build
+
+The collector workflow is the bundle consistency step.
+
+When a package changes, the collector is rebuilt while reusing the build state coming from that exact package build. This lets the collector rebuild against the newly built package instead of only relying on what is already published in Conan repositories.
+
+This stage answers:
+- does the collector still build correctly with the updated package
+- is the dependency graph still coherent at bundle level
+
+### Context build
+
+The context workflow is the final delivery step. It starts from the collector build state and produces the final bundle outputs:
+- Conan install and deploy
+- APT delivery
+- generated documentation site
+
+This stage answers:
+- can the full delivery be produced from the updated collector state
+- are package delivery, APT publication and docs generation still coherent together
+
+### Why `source_build_context` exists
+
+The chained `source_build_context` keeps the provenance across:
+- package build
+- collector build
+- context build
+
+That lets each stage restore the lockfile and optional cache from the previous relevant stage and makes the final delivery traceable back to the package build that triggered it.
+
 ## Conan Workflow Contracts
 
 ### Source build context
@@ -87,4 +133,3 @@ Legacy compatibility is still kept for now:
 - `built_package` in collector workflows
 
 New integrations should use only `source_build_context`.
-
