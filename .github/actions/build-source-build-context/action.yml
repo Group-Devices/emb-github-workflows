@@ -1,0 +1,54 @@
+name: Build Source Build Context
+description: Create or extend the chained source_build_context payload used across package, collector and context workflows.
+
+inputs:
+  append-key:
+    description: Context key to append with the current workflow run.
+    required: true
+  incoming-context:
+    description: Existing chained source_build_context payload.
+    required: false
+    default: ''
+  fallback-context:
+    description: Legacy fallback payload used when incoming-context is empty.
+    required: false
+    default: ''
+
+outputs:
+  context:
+    description: Updated chained source_build_context payload.
+    value: ${{ steps.build.outputs.context }}
+
+runs:
+  using: composite
+  steps:
+    - id: build
+      name: Build source build context payload
+      shell: bash
+      env:
+        APPEND_KEY: ${{ inputs.append-key }}
+        INCOMING_CONTEXT: ${{ inputs.incoming-context }}
+        FALLBACK_CONTEXT: ${{ inputs.fallback-context }}
+      run: |
+        CURRENT_CONTEXT=$(jq -n --compact-output '{
+          repo: env.GITHUB_REPOSITORY,
+          owner: env.GITHUB_REPOSITORY_OWNER,
+          run_id: env.GITHUB_RUN_ID,
+          run_number: env.GITHUB_RUN_NUMBER,
+          run_attempt: env.GITHUB_RUN_ATTEMPT,
+          sha: env.GITHUB_SHA,
+          ref: env.GITHUB_REF,
+          actor: env.GITHUB_ACTOR,
+          workflow: env.GITHUB_WORKFLOW
+        }')
+
+        BASE_CONTEXT="$INCOMING_CONTEXT"
+        if [ -z "$BASE_CONTEXT" ]; then
+          BASE_CONTEXT="$FALLBACK_CONTEXT"
+        fi
+        if [ -z "$BASE_CONTEXT" ]; then
+          BASE_CONTEXT='{}'
+        fi
+
+        CONTEXT=$(printf '%s' "$BASE_CONTEXT" | jq -c --arg key "$APPEND_KEY" --argjson current "$CURRENT_CONTEXT" '. + {($key): $current}')
+        echo "context=$CONTEXT" >> "$GITHUB_OUTPUT"

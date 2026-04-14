@@ -368,22 +368,16 @@ jobs:
             exit 1
           fi
 
+      - id: package-context
+        name: Build package source context
+        uses: Group-Devices/emb-github-workflows/.github/actions/build-source-build-context@release/v1.0
+        with:
+          append-key: package_context
+
       - name: Dispatch workflow of ${{ matrix.collector }} on ${{ github.ref_name }}
         run: |
           SHORT_SHA=${GITHUB_SHA::7}
-          JSON=$(jq -n --compact-output '{
-            package_context: {
-              repo: "'"${GITHUB_REPOSITORY}"'",
-              owner: "'"${GITHUB_REPOSITORY_OWNER}"'",
-              run_id: '"$GITHUB_RUN_ID"',
-              run_number: '"$GITHUB_RUN_NUMBER"',
-              run_attempt: '"$GITHUB_RUN_ATTEMPT"',
-              sha: "'"${GITHUB_SHA}"'",
-              ref: "'"${GITHUB_REF}"'",
-              actor: "'"${GITHUB_ACTOR}"'",
-              workflow: "'"${GITHUB_WORKFLOW}"'"
-            } 
-          }')
+          JSON='${{ steps.package-context.outputs.context }}'
           echo "context pass $JSON"
           echo "command gh workflow run ${TARGET_WORKFLOW} --repo ${{ matrix.collector }} --ref ${{ github.ref_name }} --field source_build_context=$JSON --field built_package=$JSON"
           gh workflow run "${TARGET_WORKFLOW}" \
@@ -416,27 +410,17 @@ jobs:
         with:
           owner: ${{ env.CONTEXT_OWNER }}
           json-secrets: ${{ toJson(secrets) }}
+      - id: collector-context
+        name: Build collector source context
+        uses: Group-Devices/emb-github-workflows/.github/actions/build-source-build-context@release/v1.0
+        with:
+          append-key: collector_context
+          incoming-context: ${{ inputs.source-build-context }}
+          fallback-context: ${{ inputs.force-build }}
       - name: Call context delivery  
         run: |  
           context=$(yq e '.bundle' "${CONAN_CONTEXT_PATH}")
-          COLLECTOR_JSON=$(jq -n --compact-output '{
-            repo: env.GITHUB_REPOSITORY,
-            owner: env.GITHUB_REPOSITORY_OWNER,
-            run_id: env.GITHUB_RUN_ID,
-            run_number: env.GITHUB_RUN_NUMBER,
-            run_attempt: env.GITHUB_RUN_ATTEMPT,
-            sha: env.GITHUB_SHA,
-            ref: env.GITHUB_REF,
-            actor: env.GITHUB_ACTOR,
-            workflow: env.GITHUB_WORKFLOW
-          }')
-          if [ -n '${{ inputs.source-build-context }}' ]; then
-            SOURCE_BUILD_CONTEXT=$(echo '${{ inputs.source-build-context }}' | jq -c --argjson collector_context "$COLLECTOR_JSON" '. + {collector_context: $collector_context}')
-          elif [ -n '${{ inputs.force-build }}' ]; then
-            SOURCE_BUILD_CONTEXT=$(echo '${{ inputs.force-build }}' | jq -c --argjson collector_context "$COLLECTOR_JSON" '. + {collector_context: $collector_context}')
-          else
-            SOURCE_BUILD_CONTEXT=$(jq -n --argjson collector_context "$COLLECTOR_JSON" '{collector_context: $collector_context}')
-          fi
+          SOURCE_BUILD_CONTEXT='${{ steps.collector-context.outputs.context }}'
           COLLECTOR_REPO=$(echo "$SOURCE_BUILD_CONTEXT" | jq -r '.collector_context.repo // "unknown-collector"')
           PACKAGE_REPO=$(echo "$SOURCE_BUILD_CONTEXT" | jq -r '.package_context.repo // "unknown-package"')
           COLLECTOR_NAME=${COLLECTOR_REPO#*/}
