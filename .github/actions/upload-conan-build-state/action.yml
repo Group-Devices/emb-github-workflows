@@ -5,10 +5,10 @@ inputs:
   profile:
     description: Conan profile name used to name artifacts.
     required: true
-  use-cache:
-    description: Archive and upload Conan cache artifact.
+  cache-mode:
+    description: Cache mode to archive and upload. Supported values are none, recipes and full.
     required: false
-    default: 'false'
+    default: 'none'
 
 runs:
   using: composite
@@ -20,13 +20,24 @@ runs:
         path: conan-lockfile.json
         retention-days: 1
 
-    - if: ${{ inputs.use-cache == 'true' }}
+    - if: ${{ inputs.cache-mode != 'none' }}
       name: Archive Conan cache
       shell: bash
       run: |
-        conan cache save --file "cache-${{ inputs.profile }}.tgz" --no-source "*/*:*"
+        case '${{ inputs.cache-mode }}' in
+          recipes)
+            conan cache save --file "cache-${{ inputs.profile }}.tgz" "*"
+            ;;
+          full)
+            conan cache save --file "cache-${{ inputs.profile }}.tgz" --no-source "*/*:*"
+            ;;
+          *)
+            echo "Unsupported cache mode: ${{ inputs.cache-mode }}"
+            exit 1
+            ;;
+        esac
 
-    - if: ${{ inputs.use-cache == 'true' }}
+    - if: ${{ inputs.cache-mode != 'none' }}
       name: Upload Conan cache
       uses: actions/upload-artifact@v4
       with:

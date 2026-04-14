@@ -154,11 +154,26 @@ Current setting:
 
 ```yaml
 build:
-  use_cache: true|false
+  cache_mode: none|recipes|full
 ```
 
+Supported modes:
+- `none`
+  - do not save or restore Conan cache artifacts
+- `recipes`
+  - save and restore recipe metadata only
+  - this keeps the archive small while still preserving recipe and revision information between stages
+- `full`
+  - save and restore the full cache mode currently implemented by the workflow helpers
+  - this remains available for other environments or future experiments, even if it is not the recommended default here
+
+Compatibility:
+- if `build.cache_mode` is absent, the workflows still accept legacy `build.use_cache` or top-level `use_cache`
+- legacy `true` maps to `full`
+- legacy `false` maps to `none`
+
 Behavior:
-- package build reads `build.use_cache` from the Conan context
+- package build reads `build.cache_mode` from the Conan context
 - delivery/docs build reads the same setting from the context
 - pull request runs do not upload lockfile/cache artifacts
 

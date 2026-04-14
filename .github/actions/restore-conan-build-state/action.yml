@@ -29,10 +29,10 @@ inputs:
   profile:
     description: Conan profile name used to name artifacts.
     required: true
-  use-cache:
-    description: Restore Conan cache artifact in addition to the lockfile.
+  cache-mode:
+    description: Cache mode to restore in addition to the lockfile. Supported values are none, recipes and full.
     required: false
-    default: 'false'
+    default: 'none'
   create-lockfile-command:
     description: Optional shell command used when the lockfile cannot be restored.
     required: false
@@ -107,7 +107,7 @@ runs:
         echo "lockfile-restored=${restored}" >> "$GITHUB_OUTPUT"
 
     - id: restore-cache
-      if: ${{ inputs.use-cache == 'true' }}
+      if: ${{ inputs.cache-mode != 'none' }}
       name: Restore Conan cache
       shell: bash
       run: |

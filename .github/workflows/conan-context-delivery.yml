@@ -419,14 +419,26 @@ jobs:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
 
-      - name: Resolve Conan cache usage
+      - name: Resolve Conan cache mode
         run: |
-          context_use_cache=$(yq e '.build.use_cache // .use_cache // false' "${CONAN_CONTEXT_PATH}")
-          if [ "$context_use_cache" = 'true' ]; then
-            echo "USE_CACHE=true" >> "$GITHUB_ENV"
-          else
-            echo "USE_CACHE=false" >> "$GITHUB_ENV"
+          context_cache_mode=$(yq e '.build.cache_mode // ""' "${CONAN_CONTEXT_PATH}")
+          if [ -z "$context_cache_mode" ] || [ "$context_cache_mode" = "null" ]; then
+            context_use_cache=$(yq e '.build.use_cache // .use_cache // false' "${CONAN_CONTEXT_PATH}")
+            if [ "$context_use_cache" = 'true' ]; then
+              context_cache_mode=full
+            else
+              context_cache_mode=none
+            fi
           fi
+          case "$context_cache_mode" in
+            none|recipes|full)
+              echo "CACHE_MODE=$context_cache_mode" >> "$GITHUB_ENV"
+              ;;
+            *)
+              echo "Unsupported build.cache_mode: $context_cache_mode"
+              exit 1
+              ;;
+          esac
 
       - name: Restore Conan build state
         uses: Group-Devices/emb-github-workflows/.github/actions/restore-conan-build-state@release/v1.0
@@ -438,7 +450,7 @@ jobs:
           source-owner: ${{ inputs.source_owner }}
           json-secrets: ${{ toJson(secrets) }}
           profile: ${{ matrix.profile }}
-          use-cache: ${{ env.USE_CACHE }}
+          cache-mode: ${{ env.CACHE_MODE }}
 
       - name: Add original repository in configuration
         run: |
@@ -652,14 +664,26 @@ jobs:
         with:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
-      - name: Resolve Conan cache usage
+      - name: Resolve Conan cache mode
         run: |
-          context_use_cache=$(yq e '.build.use_cache // .use_cache // false' "${CONAN_CONTEXT_PATH}")
-          if [ "$context_use_cache" = 'true' ]; then
-            echo "USE_CACHE=true" >> "$GITHUB_ENV"
-          else
-            echo "USE_CACHE=false" >> "$GITHUB_ENV"
+          context_cache_mode=$(yq e '.build.cache_mode // ""' "${CONAN_CONTEXT_PATH}")
+          if [ -z "$context_cache_mode" ] || [ "$context_cache_mode" = "null" ]; then
+            context_use_cache=$(yq e '.build.use_cache // .use_cache // false' "${CONAN_CONTEXT_PATH}")
+            if [ "$context_use_cache" = 'true' ]; then
+              context_cache_mode=full
+            else
+              context_cache_mode=none
+            fi
           fi
+          case "$context_cache_mode" in
+            none|recipes|full)
+              echo "CACHE_MODE=$context_cache_mode" >> "$GITHUB_ENV"
+              ;;
+            *)
+              echo "Unsupported build.cache_mode: $context_cache_mode"
+              exit 1
+              ;;
+          esac
       - name: Restore Conan build state
         uses: Group-Devices/emb-github-workflows/.github/actions/restore-conan-build-state@release/v1.0
         with:
@@ -670,7 +694,7 @@ jobs:
           source-owner: ${{ inputs.source_owner }}
           json-secrets: ${{ toJson(secrets) }}
           profile: default
-          use-cache: ${{ env.USE_CACHE }}
+          cache-mode: ${{ env.CACHE_MODE }}
       - name: Collect docs delivery
         run: |
           set --
