@@ -55,6 +55,25 @@ The chained `source_build_context` keeps the provenance across:
 
 That lets each stage restore the lockfile and optional cache from the previous relevant stage and makes the final delivery traceable back to the package build that triggered it.
 
+### Conan context configuration
+
+Conan configuration is not hardcoded in the reusable workflows. It comes from the Conan context package selected by the bundle.
+
+The selection point is the `bundle` field in the `conanfile.py` of package and collector repositories. That bundle resolves to the Conan context package, which provides the shared build configuration used by the workflows.
+
+That context provides in particular:
+- Conan remotes
+- Conan profiles
+- shared build options such as cache activation
+
+So the flow is:
+- package or collector recipe declares its bundle
+- the bundle resolves the Conan context package
+- the reusable workflow reads that context
+- Conan is configured from that context before build, collector rebuild, or delivery
+
+This keeps repository workflows generic while centralizing environment-specific Conan setup in the context package used by the bundle.
+
 ## Conan Workflow Contracts
 
 ### Source build context
