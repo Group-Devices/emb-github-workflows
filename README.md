@@ -127,6 +127,25 @@ These names are produced by:
 And restored by:
 - `.github/actions/restore-conan-build-state`
 
+### Lockfile semantics
+
+The lockfile follows the same staged flow as the build context.
+
+Rules:
+- package build creates the initial lockfile for the package build graph
+- collector rebuild restores that package lockfile and rebuilds the collector against the newly built package
+- context delivery restores the collector build state and reuses its lockfile for delivery and docs generation
+
+Delivery uses:
+- `-l conan-lockfile.json --lockfile-partial`
+
+Partial mode is expected there because the collector package being installed in delivery is not part of the original package lockfile. The lockfile still constrains the dependency graph inherited from the previous stage, while allowing the collector package itself to be added at delivery time.
+
+This means:
+- package stage fixes the initial dependency graph
+- collector stage validates that graph with the updated package inserted
+- context stage reuses the collector graph for final APT delivery and documentation generation
+
 ### Cache activation
 
 Conan cache restore/save is controlled by `conan-context.yml`, not by individual package workflows.
