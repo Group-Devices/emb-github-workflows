@@ -516,8 +516,8 @@ jobs:
             URL_NOPRO=${url#*//}
             # supreess github.com
             URL_REL=${URL_NOPRO#*/}
-            # suppress .git if any
-            URL_REL=${URL_REL%.*}
+            # suppress a literal .git suffix only, keeping dotted repo names intact
+            URL_REL=${URL_REL%.git}
             OWNER=$(echo "${URL_REL}" | cut -d'/' -f1)
             if [ "${AUTHENTICATED_OWNER}" != "${OWNER}" ]; then
               echo "Extracting github token secret for org ${OWNER}"
