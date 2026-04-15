@@ -74,6 +74,72 @@ So the flow is:
 
 This keeps repository workflows generic while centralizing environment-specific Conan setup in the context package used by the bundle.
 
+## Project Architecture
+
+The workspace is organized around four repository families that play different roles in the build.
+
+### `SDK`
+
+`SDK` contains the product packages and collectors.
+
+Examples:
+- `secretary.sdk`
+- `secretary.monitor`
+- `collect-secretary`
+
+Each package or collector recipe declares a `bundle` in its `conanfile.py`. That declaration is the entry point into the rest of the build system.
+
+### Bundle repositories
+
+A bundle repository defines the delivery context used by a set of packages and collectors.
+
+Examples:
+- `Group-Devices/secretary-conan-context`
+- `Group-Devices/rootfs-conan-context`
+
+The bundle provides the `conan-context.yml` consumed by the reusable workflows. That file defines:
+- build profiles
+- collectors
+- Conan config source
+- Conan repositories and credentials
+- cache mode
+- delivery options
+
+This is what lets one package family build against the normal Secretary bundle while another build family targets the ROOTFS-based bundle.
+
+### `BUILD`
+
+`BUILD` contains the shared build infrastructure:
+- `emb-github-workflows`
+- `conan-config`
+- `build-helper`
+- compiler images and related tooling
+
+The reusable workflows live here, but they do not hardcode product configuration. They orchestrate package, collector, and context builds using the bundle-selected Conan context.
+
+### `COTS` and `ROOTFS`
+
+These two trees provide the dependency layers used by bundles and packages.
+
+- `COTS`
+  - Conan-built third-party packages maintained in this workspace
+- `ROOTFS`
+  - wrapper packages for system-provided dependencies, especially for profiles such as `taipan2` and `raptor`
+
+So the effective dependency model is not only “Secretary packages depend on COTS”. Depending on the selected bundle and profile, a build may resolve against:
+- `COTS` packages built through Conan
+- `ROOTFS` wrappers around Debian/system packages
+
+### End-to-end hierarchy
+
+The practical hierarchy is:
+- a package or collector declares a `bundle`
+- the bundle selects a Conan context
+- the Conan context selects profiles, remotes, collectors, cache mode, and delivery behavior
+- the reusable workflows execute that policy across package build, collector rebuild, and context delivery
+
+This keeps package repositories small and focused while pushing environment-specific policy into the bundle and shared build infrastructure.
+
 ## Conan Workflow Contracts
 
 ### Source build context
