@@ -49,31 +49,21 @@ def build_index(root: Path, current: str | None) -> None:
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Documentation Versions</title>
-    <style>
-      body {{
-        font-family: sans-serif;
-        margin: 2rem auto;
-        max-width: 48rem;
-        padding: 0 1rem;
-        line-height: 1.5;
-      }}
-      h1 {{
-        margin-bottom: 0.5rem;
-      }}
-      ul {{
-        padding-left: 1.25rem;
-      }}
-      li {{
-        margin: 0.4rem 0;
-      }}
-    </style>
+    <link rel="stylesheet" href="docs.css">
   </head>
   <body>
-    <h1>Documentation Versions</h1>
-    <p>Select a published documentation version.</p>
-    <ul>
-      {body}
-    </ul>
+    <main class="docs-page">
+      <header class="docs-header">
+        <a class="docs-back-link" href="main/">Open Main Docs</a>
+        <h1>Documentation Versions</h1>
+        <p>Select a published documentation version.</p>
+      </header>
+      <section class="docs-content">
+        <ul>
+          {body}
+        </ul>
+      </section>
+    </main>
   </body>
 </html>
 """
@@ -87,6 +77,9 @@ def main() -> int:
     root = Path(sys.argv[1]).resolve()
     current = sys.argv[2] if len(sys.argv) > 2 else None
     os.makedirs(root, exist_ok=True)
+    css_path = Path(__file__).resolve().parent / "templates" / "docs.css"
+    if css_path.exists():
+        (root / "docs.css").write_text(css_path.read_text(encoding="utf-8"), encoding="utf-8")
     build_index(root, current)
     return 0
 
