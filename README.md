@@ -171,6 +171,9 @@ Current chain:
     "ref": "refs/heads/main",
     "actor": "user",
     "workflow": "rebuild"
+  },
+  "delivery_options": {
+    "docs_enabled": false
   }
 }
 ```
@@ -178,8 +181,33 @@ Current chain:
 Rules:
 - package builds emit `package_context`
 - collector rebuilds receive that payload and forward it unchanged while appending `collector_context`
+- collector-triggered context delivery may append `delivery_options`
 - context delivery restores lockfile/cache from `collector_context`
 - if `collector_context` is absent, restore falls back to `package_context`
+
+### Collector relevance gate
+
+Collector rebuild workflows may skip themselves when the changed package is not present in the collector dependency graph.
+
+Rules:
+- the check is profile-aware and evaluates every configured collector build profile
+- a collector rebuild runs only if at least one profile depends on the changed package
+- when no profile depends on the changed package, the workflow ends through a visible `skip` job
+- skipped collectors do not dispatch context delivery
+
+The relevance check reuses Conan graph computation rather than a static dependency list so that profile-specific differences remain accurate.
+
+### Delivery options
+
+`delivery_options` is the execution-options section of `source_build_context`.
+
+Current field:
+- `delivery_options.docs_enabled`
+
+Rules:
+- if `delivery_options.docs_enabled` is `false`, collector-triggered context delivery skips docs generation
+- if the field is absent, docs behavior falls back to the bundle context and workflow defaults
+- this keeps the workflow-dispatch contract stable while still allowing collectors to suppress repeated docs rebuilds
 
 ### Lockfile and cache artifacts
 
