@@ -78,6 +78,8 @@ jobs:
 
   check-conan-context:
     runs-on: ubuntu-latest
+    outputs:
+      effective-docs-enabled: ${{ steps.effective-docs.outputs.enabled }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -106,6 +108,27 @@ jobs:
             echo "The repository url of ${upload_repository} is ${upload_repository_url}"
             echo "Current release name should be ${release_name}"
             exit 1
+          fi
+
+      - name: Compute effective docs enablement
+        id: effective-docs
+        shell: bash
+        env:
+          WORKFLOW_DOCS_ENABLED: ${{ inputs.docs-enabled }}
+          SOURCE_BUILD_CONTEXT: ${{ inputs.source_build_context }}
+        run: |
+          context_docs_enabled=$(yq -r '.docs.enabled // ""' "${CONAN_CONTEXT_PATH}")
+          if [ -z "${context_docs_enabled}" ] || [ "${context_docs_enabled}" = "null" ]; then
+            context_docs_enabled="${WORKFLOW_DOCS_ENABLED}"
+          fi
+
+          delivery_docs_enabled=$(printf '%s' "${SOURCE_BUILD_CONTEXT}" | jq -r '.delivery_options.docs_enabled // ""' 2>/dev/null || true)
+          if [ "${delivery_docs_enabled}" = "false" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          elif [ "${context_docs_enabled}" = "true" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
           fi
 
   extract-collectors:
@@ -673,9 +696,10 @@ jobs:
   build-docs:
     runs-on: eks-runner-linux-x64-medium
     needs:
+      - check-conan-context
       - extract-collectors
       - clone-workspace
-    if: inputs.docs-enabled == true
+    if: needs.check-conan-context.outputs.effective-docs-enabled == 'true'
     container:
       image: repository.nexus.vixtechnology.com/docker-internal-group/default-compiler:main
       credentials:
@@ -768,8 +792,9 @@ jobs:
   publish-docs:
     runs-on: ubuntu-latest
     needs:
+      - check-conan-context
       - build-docs
-    if: inputs.docs-enabled == true
+    if: needs.check-conan-context.outputs.effective-docs-enabled == 'true'
     steps:
       - name: Download built docs site
         uses: actions/download-artifact@v8
