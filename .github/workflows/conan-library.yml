@@ -144,10 +144,108 @@ jobs:
     if: inputs.run-as-fast-build == false && inputs.enable-quality-analysis
     steps:
       - run: echo "Will run a SonarQube analysis"
+  collector-relevance:
+    runs-on: eks-runner-linux-x64-medium
+    if: always()
+    needs:
+      - generate-conan-context
+    outputs:
+      should-build: ${{ steps.resolve.outputs.should-build }}
+      relevant-profiles: ${{ steps.resolve.outputs.relevant-profiles }}
+    container:
+      image: repository.nexus.vixtechnology.com/docker-internal-group/aurora-compiler:main
+      credentials:
+        username: ${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
+        password: ${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare Conan context
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.conan-context }}" ]; then
+            mkdir -p .conan-context
+            printf '%s\n' "${{ inputs.conan-context }}" > .conan-context/conan-context.yml
+          else
+            mkdir -p .conan-context
+          fi
+
+      - name: Download Conan context artifact
+        if: inputs.conan-context == '' && inputs.run-as-fast-build == false
+        uses: actions/download-artifact@v8
+        with:
+          name: conan-context
+          path: .conan-context
+
+      - name: Configure Conan
+        if: inputs.build-missing == true && (inputs.source-build-context != '' || inputs.force-build != '')
+        uses: Group-Devices/emb-github-workflows/.github/actions/configure-conan@release/v1.0
+        with:
+          json-secrets: ${{ toJson(secrets) }}
+          conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
+
+      - id: resolve
+        shell: bash
+        env:
+          REQUESTED_PROFILES: ${{ inputs.conan-profiles != '' && inputs.conan-profiles || needs.generate-conan-context.outputs.build-profile-list }}
+          SOURCE_BUILD_CONTEXT: ${{ inputs.source-build-context != '' && inputs.source-build-context || inputs.force-build }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${REQUESTED_PROFILES}" ] || [ "${REQUESTED_PROFILES}" = "null" ]; then
+            echo "Unable to determine build profiles"
+            exit 1
+          fi
+
+          if [ "${{ inputs.build-missing }}" != "true" ] || [ -z "${SOURCE_BUILD_CONTEXT}" ]; then
+            echo "should-build=true" >> "$GITHUB_OUTPUT"
+            echo "relevant-profiles=${REQUESTED_PROFILES}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          PKG_REF=$(echo "$SOURCE_BUILD_CONTEXT" | jq -r '.package_context.ref // empty')
+          PKG_REPO=$(echo "$SOURCE_BUILD_CONTEXT" | jq -r '.package_context.repo // empty')
+          PKG_NAME=$(echo "$SOURCE_BUILD_CONTEXT" | jq -r '.package_context.name // empty')
+
+          if [ -z "$PKG_NAME" ] && [ -n "$PKG_REF" ]; then
+            PKG_NAME=${PKG_REF%%/*}
+          fi
+          if [ -z "$PKG_NAME" ] && [ -n "$PKG_REPO" ]; then
+            PKG_NAME=${PKG_REPO#*/}
+          fi
+
+          if [ -z "$PKG_NAME" ]; then
+            echo "Unable to determine package name from source_build_context"
+            exit 1
+          fi
+
+          SHOULD_BUILD=false
+          RELEVANT_PROFILES=()
+
+          while IFS= read -r PROFILE; do
+            [ -n "$PROFILE" ] || continue
+            conan graph build-order . \
+              -pr:h "$PROFILE" \
+              --build=missing \
+              --format=json \
+              --reduce \
+              --order-by recipe > "build-${PROFILE}.json"
+
+            if jq -e --arg pkg "$PKG_NAME" '
+                [.order // [] | .[][]? | .ref // ""] | any(startswith($pkg + "/"))
+              ' "build-${PROFILE}.json" >/dev/null; then
+              SHOULD_BUILD=true
+              RELEVANT_PROFILES+=("\"$PROFILE\"")
+            fi
+          done < <(echo "$REQUESTED_PROFILES" | jq -r '.[]')
+
+          echo "should-build=$SHOULD_BUILD" >> "$GITHUB_OUTPUT"
+          echo "relevant-profiles=[$(IFS=,; echo "${RELEVANT_PROFILES[*]}")]" >> "$GITHUB_OUTPUT"
   build-and-upload:
     runs-on: ${{ startsWith(github.event.repository.name, 'qt') && 'eks-runner-linux-x64-large' || 'eks-runner-linux-x64-medium' }}
     if: >-
-      always() && (
+      always() &&
+      needs.collector-relevance.outputs.should-build == 'true' && (
         inputs.conan-profiles != '' ||
         !inputs.run-unit-tests ||
         needs.unit-tests.result == 'success'
@@ -155,10 +253,11 @@ jobs:
     needs:
       - generate-conan-context
       - unit-tests
+      - collector-relevance
     strategy:
       fail-fast: false
       matrix:
-        profile: ${{ inputs.conan-profiles != '' && fromJson(inputs.conan-profiles) || fromJson(needs.generate-conan-context.outputs.build-profile-list) }}
+        profile: ${{ fromJson(needs.collector-relevance.outputs.relevant-profiles) }}
     container:
       image: repository.nexus.vixtechnology.com/docker-internal-group/${{ matrix.profile }}-compiler:main
       credentials:
@@ -327,6 +426,14 @@ jobs:
         with:
           profile: ${{ matrix.profile }}
           cache-mode: ${{ env.CACHE_MODE }}
+
+  skip-collector:
+    runs-on: ubuntu-latest
+    needs:
+      - collector-relevance
+    if: inputs.build-missing == true && needs.collector-relevance.outputs.should-build != 'true'
+    steps:
+      - run: echo "Changed package is not present in the collector dependency graph for any configured profile. Skipping collector rebuild and context delivery."
           
   rebuild-collectors:
     runs-on: ubuntu-latest
