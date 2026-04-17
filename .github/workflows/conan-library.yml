@@ -433,13 +433,13 @@ jobs:
         run: |  
           context=$(yq e '.bundle' "${CONAN_CONTEXT_PATH}")
           SOURCE_BUILD_CONTEXT='${{ steps.collector-context.outputs.context }}'
-          COLLECTOR_REPO=$(echo "$SOURCE_BUILD_CONTEXT" | jq -r '.collector_context.repo // "unknown-collector"')
-          PACKAGE_REPO=$(echo "$SOURCE_BUILD_CONTEXT" | jq -r '.package_context.repo // "unknown-package"')
+          DELIVERY_BUILD_CONTEXT=$(printf '%s' "$SOURCE_BUILD_CONTEXT" | jq -c '. + {delivery_options: ((.delivery_options // {}) + {docs_enabled: false})}')
+          COLLECTOR_REPO=$(echo "$DELIVERY_BUILD_CONTEXT" | jq -r '.collector_context.repo // "unknown-collector"')
+          PACKAGE_REPO=$(echo "$DELIVERY_BUILD_CONTEXT" | jq -r '.package_context.repo // "unknown-package"')
           COLLECTOR_NAME=${COLLECTOR_REPO#*/}
           PACKAGE_NAME=${PACKAGE_REPO#*/}
           gh workflow run "delivery.yml" \
             --repo "${context}" \
             --ref "${{ github.ref_name }}" \
             --field rebuild_cause="Rebuild context after collector rebuild (${COLLECTOR_NAME}) due to package change in ${PACKAGE_NAME} on ${{ github.ref_name }}" \
-            --field source_build_context="$SOURCE_BUILD_CONTEXT" \
-            --field docs_enabled=false
+            --field source_build_context="$DELIVERY_BUILD_CONTEXT"
