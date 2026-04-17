@@ -441,4 +441,5 @@ jobs:
             --repo "${context}" \
             --ref "${{ github.ref_name }}" \
             --field rebuild_cause="Rebuild context after collector rebuild (${COLLECTOR_NAME}) due to package change in ${PACKAGE_NAME} on ${{ github.ref_name }}" \
-            --field source_build_context="$SOURCE_BUILD_CONTEXT"
+            --field source_build_context="$SOURCE_BUILD_CONTEXT" \
+            --field docs_enabled=false
