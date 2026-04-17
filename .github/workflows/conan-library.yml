@@ -224,16 +224,14 @@ jobs:
 
           while IFS= read -r PROFILE; do
             [ -n "$PROFILE" ] || continue
-            conan graph build-order . \
+            conan graph info . \
               -pr:h "$PROFILE" \
-              --build=missing \
               --format=json \
-              --reduce \
-              --order-by recipe > "build-${PROFILE}.json"
+              > "graph-${PROFILE}.json"
 
             if jq -e --arg pkg "$PKG_NAME" '
-                [.order // [] | .[][]? | .ref // ""] | any(startswith($pkg + "/"))
-              ' "build-${PROFILE}.json" >/dev/null; then
+                [.graph.nodes // {} | to_entries[] | .value.ref // ""] | any(startswith($pkg + "/"))
+              ' "graph-${PROFILE}.json" >/dev/null; then
               SHOULD_BUILD=true
               RELEVANT_PROFILES+=("\"$PROFILE\"")
             fi
