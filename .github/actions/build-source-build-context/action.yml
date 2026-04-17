@@ -31,6 +31,7 @@ runs:
         FALLBACK_CONTEXT: ${{ inputs.fallback-context }}
       run: |
         CURRENT_CONTEXT=$(jq -n --compact-output '{
+          name: (env.GITHUB_REPOSITORY | split("/")[1]),
           repo: env.GITHUB_REPOSITORY,
           owner: env.GITHUB_REPOSITORY_OWNER,
           run_id: env.GITHUB_RUN_ID,

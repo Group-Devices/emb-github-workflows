@@ -203,13 +203,9 @@ jobs:
             exit 0
           fi
 
-          PKG_REF=$(echo "$SOURCE_BUILD_CONTEXT" | jq -r '.package_context.ref // empty')
           PKG_REPO=$(echo "$SOURCE_BUILD_CONTEXT" | jq -r '.package_context.repo // empty')
           PKG_NAME=$(echo "$SOURCE_BUILD_CONTEXT" | jq -r '.package_context.name // empty')
 
-          if [ -z "$PKG_NAME" ] && [ -n "$PKG_REF" ]; then
-            PKG_NAME=${PKG_REF%%/*}
-          fi
           if [ -z "$PKG_NAME" ] && [ -n "$PKG_REPO" ]; then
             PKG_NAME=${PKG_REPO#*/}
           fi
