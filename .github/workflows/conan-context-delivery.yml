@@ -529,16 +529,16 @@ jobs:
               : # of the source tag used for creating the clone package if it already exist
               if gh api "repos/${URL_REL}/branches/release/${DELIVERY_NAME}" --silent > /dev/null 2>&1; then
                 echo "Branch release/${DELIVERY_NAME} already found in ${URL_REL}"
-                curl --fail  --silent -H "Authorization: token ${OWNER_GIT_TOKEN}"  "https://api.github.com/repos/$URL_REL/git/refs/heads/release/${DELIVERY_NAME}" -o ./getref.json
-                prev_sha=$(jq -r -c ".object.sha" ./getref.json)
-                if [ "${prev_sha}" != "${sha}" ]; then
-                  echo "Changed branch from ${prev_sha} to ${sha}"
-                  gh api --method PATCH \
-                    -H 'Accept: application/vnd.github+json' \
-                    -H 'X-GitHub-Api-Version: 2022-11-28' \
-                    "/repos/${URL_REL}/git/refs/heads/release/${DELIVERY_NAME}" \
-                    -f "sha=${sha}"
-                fi
+                : # curl --fail  --silent -H "Authorization: token ${OWNER_GIT_TOKEN}"  "https://api.github.com/repos/$URL_REL/git/refs/heads/release/${DELIVERY_NAME}" -o ./getref.json
+                : # prev_sha=$(jq -r -c ".object.sha" ./getref.json)
+                : # if [ "${prev_sha}" != "${sha}" ]; then
+                : #   echo "Changed branch from ${prev_sha} to ${sha}"
+                : #   gh api --method PATCH \
+                : #     -H 'Accept: application/vnd.github+json' \
+                : #     -H 'X-GitHub-Api-Version: 2022-11-28' \
+                : #     "/repos/${URL_REL}/git/refs/heads/release/${DELIVERY_NAME}" \
+                : #     -f "sha=${sha}"
+                : # fi
               else
                 echo "Branch release/${DELIVERY_NAME} not found in ${URL_REL}, create it now with sha=${sha}"
                 echo gh api --method POST \
