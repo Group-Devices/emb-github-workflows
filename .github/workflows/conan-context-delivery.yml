@@ -368,6 +368,7 @@ jobs:
       - name: Create ALM release
         shell: bash
         run: |
+          set -x
           set +e
           set +o pipefail
           echo "Check is release is needed"
