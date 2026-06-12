@@ -403,25 +403,25 @@ jobs:
 
           echo "!!!! deliverable=$deliverable !!!!!!"
           echo "Create ALM release"
-          almcli checkRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${{username_secret}}" --password="${{password_secret}}" --url="${{almUrl}}"
+          almcli checkRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${username_secret}" --password="${password_secret}" --url="${almUrl}"
           res=$?
           if [ "${res}" = "0" ]; then
             echo "Release already exists, skipping creation"
             exit 0
           else
             echo "Release does not exist or is different, try creating it"
-            almcli createRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${{username_secret}}" --password="${{password_secret}}" --url="${{almUrl}}"
+            almcli createRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${username_secret}" --password="${password_secret}" --url="${almUrl}"
             res=$?
             if [ "${res}" != "0" ]; then
               echo "almcli createRelease failed, try update"
-              almcli updateRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${{username_secret}}" --password="${{password_secret}}" --url="${{almUrl}}"
+              almcli updateRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${username_secret}" --password="${password_secret}" --url="${almUrl}"
               res=$?
               if [ "${res}" != "0" ]; then
                 echo "almcli updateRelease failed"
                 exit 1
               fi
             fi
-            almcli publishRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${{username_secret}}" --password="${{password_secret}}" --url="${{almUrl}}"
+            almcli publishRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="{username_secret}" --password="${password_secret}" --url="${almUrl}"
             res=$?
             if [ "${res}" != "0" ]; then
               echo "almcli publishRelease failed"
