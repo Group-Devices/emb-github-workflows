@@ -381,7 +381,9 @@ jobs:
           all_secrets='${{ tojson(secrets) }}'
           username_secret_var=$(yq -r ".almRelease.almUsernameSecret" "${CONAN_CONTEXT_PATH}")
           password_secret_var=$(yq -r ".almRelease.almPasswordSecret" "${CONAN_CONTEXT_PATH}")
+          echo "Looking for matching github secret ${username_secret_var}"
           username_secret=$(echo "$all_secrets" | jq -r ".${username_secret_var}")
+          echo "Looking for matching github secret ${password_secret_var}"
           password_secret=$(echo "$all_secrets" | jq -r ".${password_secret_var}")
           if [ -z "${username_secret}" ] || [ "null" = "${username_secret}" ]; then
             echo "Secret ${username_secret_var} not found !"
