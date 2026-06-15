@@ -381,8 +381,9 @@ jobs:
           almUrl=$(yq -r ".almRelease.almUrl" "${CONAN_CONTEXT_PATH}")
           all_secrets='${{ tojson(secrets) }}'
           username_secret_var=$(yq -r ".almRelease.almUsernameSecret" "${CONAN_CONTEXT_PATH}")
-          echo "Looking for matching github secret ${username_secret_var}"
+          password_secret_var=$(yq -r ".almRelease.almPasswordSecret" "${CONAN_CONTEXT_PATH}")
           username_secret=$(echo "$all_secrets" | jq -r ".${username_secret_var}")
+          password_secret=$(echo "$all_secrets" | jq -r ".${password_secret_var}")
           if [ -z "${username_secret}" ] || [ "null" = "${username_secret}" ]; then
             echo "Secret ${username_secret_var} not found !"
             echo "Please add secret ${username_secret_var} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
@@ -390,9 +391,6 @@ jobs:
           else
             echo "Found secret ${username_secret_var}"
           fi
-          password_secret_var=$(yq -r ".almRelease.almPasswordSecret" "${CONAN_CONTEXT_PATH}")
-          echo "Looking for matching github secret ${password_secret_var}"
-          password_secret=$(echo "$all_secrets" | jq -r ".${password_secret_var}")
           if [ -z "${password_secret}" ] || [ "null" = "${password_secret}" ]; then
             echo "Secret ${password_secret_var} not found !"
             echo "Please add secret ${password_secret_var} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
