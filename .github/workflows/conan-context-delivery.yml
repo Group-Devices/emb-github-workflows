@@ -422,7 +422,7 @@ jobs:
                 exit 1
               fi
             fi
-            almcli publishRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${username_secret}" --password="${password_secret}" --url="${almUrl}"
+            almcli publishRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="{username_secret}" --password="${password_secret}" --url="${almUrl}"
             res=$?
             if [ "${res}" != "0" ]; then
               echo "almcli publishRelease failed"
