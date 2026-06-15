@@ -381,9 +381,8 @@ jobs:
           almUrl=$(yq -r ".almRelease.almUrl" "${CONAN_CONTEXT_PATH}")
           all_secrets='${{ tojson(secrets) }}'
           username_secret_var=$(yq -r ".almRelease.almUsernameSecret" "${CONAN_CONTEXT_PATH}")
-          password_secret_var=$(yq -r ".almRelease.almPasswordSecret" "${CONAN_CONTEXT_PATH}")
+          echo "Looking for matching github secret ${username_secret_var}"
           username_secret=$(echo "$all_secrets" | jq -r ".${username_secret_var}")
-          password_secret=$(echo "$all_secrets" | jq -r ".${password_secret_var}")
           if [ -z "${username_secret}" ] || [ "null" = "${username_secret}" ]; then
             echo "Secret ${username_secret_var} not found !"
             echo "Please add secret ${username_secret_var} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
@@ -391,6 +390,9 @@ jobs:
           else
             echo "Found secret ${username_secret_var}"
           fi
+          password_secret_var=$(yq -r ".almRelease.almPasswordSecret" "${CONAN_CONTEXT_PATH}")
+          echo "Looking for matching github secret ${password_secret_var}"
+          password_secret=$(echo "$all_secrets" | jq -r ".${password_secret_var}")
           if [ -z "${password_secret}" ] || [ "null" = "${password_secret}" ]; then
             echo "Secret ${password_secret_var} not found !"
             echo "Please add secret ${password_secret_var} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
@@ -413,7 +415,7 @@ jobs:
             res=$?
             if [ "${res}" != "0" ]; then
               echo "almcli createRelease failed, try update"
-              almcli updateRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${username_secret}" --password="${password_secret}" --url="${almUrl}"
+              almcli updateRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${username_secret}" --password="${password_secret}" --url="${almUrl}"Merge pull request #8 from Group-Devices/main)
               res=$?
               if [ "${res}" != "0" ]; then
                 echo "almcli updateRelease failed"
