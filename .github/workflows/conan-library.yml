@@ -28,7 +28,7 @@ on:
         required: false
         type: boolean
         default: false
-      force-build:  
+      force-build:
         description: 'Legacy source build context payload'
         required: false
         type: string
@@ -123,7 +123,7 @@ jobs:
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: 3.8
-          
+
       - name: Publish Test Results
         uses: EnricoMi/publish-unit-test-result-action/linux@v2
         if: ${{ !cancelled() && hashFiles('coverage/junit-results.xml') != '' }}
@@ -139,7 +139,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           artifact-name: code-coverage-report
           update-comment: true
-          
+
   quality-analysis:
     runs-on: eks-runner-linux-x64-medium
     container:
@@ -361,7 +361,7 @@ jobs:
               bundle="$(yq -r '.bundle'  < "${package_path}/conandata.yml" )"
               context=$(yq e '.bundle' "${CONAN_CONTEXT_PATH}")
               if [ "${bundle}" !=  "${context}" ]; then
-                echo "need to rebuild a package ${ref} from another context ${bundle}"  
+                echo "need to rebuild a package ${ref} from another context ${bundle}"
                 echo "Looks like ${bundle is broken}"
                 exit 1
               fi
@@ -383,7 +383,7 @@ jobs:
               fi
               echo "${OWNER_GIT_TOKEN}" > mytoken.txt
               gh auth login --with-token < mytoken.txt
-              rm mytoken.txt              
+              rm mytoken.txt
               echo "extracting package name and version from $ref"
               name="${ref%/*}"
               prev="${ref#*/}"
@@ -402,14 +402,14 @@ jobs:
               cd ..
               if [ ${{ github.event_name }} != 'pull_request' ]; then
                 conan upload -r "${upload}" "${name}" --confirm
-              fi  
+              fi
             done
             LOCK_OPTIONS="--lockfile-partial"
-          fi  
+          fi
           conan create . -pr:h "${{ matrix.profile }}" -l conan-lockfile.json $LOCK_OPTIONS 2>&1 | tee conan_create.log
           if [ ${{ github.event_name }} != 'pull_request' ]; then
             conan upload -r "${upload}" "${repo}" --confirm
-          fi   
+          fi
 
       - if: ${{ inputs.build-missing }}
         name: upload build packages list
@@ -433,7 +433,7 @@ jobs:
     if: inputs.build-missing == true && needs.collector-relevance.outputs.should-build != 'true'
     steps:
       - run: echo "Changed package is not present in the collector dependency graph for any configured profile. Skipping collector rebuild and context delivery."
-          
+
   rebuild-collectors:
     runs-on: ubuntu-latest
     if: always() && inputs.run-as-fast-build == false && inputs.enable-rebuild-collectors && needs.build-and-upload.result == 'success'
@@ -502,11 +502,11 @@ jobs:
             --repo "${{ matrix.collector }}" \
             --ref "${{ github.ref_name }}" \
             --field rebuild_cause="Rebuild collector due to package change in ${{ github.repository }} on ${{ github.ref_name }} (sha $SHORT_SHA)" \
-            --field built_package="$JSON"            
+            --field built_package="$JSON"
 
   rebuild-context:
     runs-on: ubuntu-latest
-    needs: 
+    needs:
       - build-and-upload
     if: always() && inputs.run-as-fast-build == false && inputs.enable-rebuild-context && needs.build-and-upload.result == 'success'
     steps:
@@ -534,8 +534,8 @@ jobs:
           append-key: collector_context
           incoming-context: ${{ inputs.source-build-context }}
           fallback-context: ${{ inputs.force-build }}
-      - name: Call context delivery  
-        run: |  
+      - name: Call context delivery
+        run: |
           context=$(yq e '.bundle' "${CONAN_CONTEXT_PATH}")
           SOURCE_BUILD_CONTEXT='${{ steps.collector-context.outputs.context }}'
           DELIVERY_BUILD_CONTEXT=$(printf '%s' "$SOURCE_BUILD_CONTEXT" | jq -c '. + {delivery_options: ((.delivery_options // {}) + {docs_enabled: false})}')
@@ -546,5 +546,4 @@ jobs:
           gh workflow run "delivery.yml" \
             --repo "${context}" \
             --ref "${{ github.ref_name }}" \
-            --field rebuild_cause="Rebuild context after collector rebuild (${COLLECTOR_NAME}) due to package change in ${PACKAGE_NAME} on ${{ github.ref_name }}" \
-            --field source_build_context="$DELIVERY_BUILD_CONTEXT"
+            --field rebuild_cause="Rebuild context after collector rebuild (${COLLECTOR_NAME}) due to package change in ${PACKAGE_NAME} on ${{ github.ref_name }}"
