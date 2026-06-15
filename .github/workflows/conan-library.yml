@@ -497,12 +497,11 @@ jobs:
           SHORT_SHA=${GITHUB_SHA::7}
           JSON='${{ steps.package-context.outputs.context }}'
           echo "context pass $JSON"
-          echo "command gh workflow run ${TARGET_WORKFLOW} --repo ${{ matrix.collector }} --ref ${{ github.ref_name }} --field source_build_context=$JSON --field built_package=$JSON"
+          echo "command gh workflow run ${TARGET_WORKFLOW} --repo ${{ matrix.collector }} --ref ${{ github.ref_name }} --field built_package=$JSON"
           gh workflow run "${TARGET_WORKFLOW}" \
             --repo "${{ matrix.collector }}" \
             --ref "${{ github.ref_name }}" \
             --field rebuild_cause="Rebuild collector due to package change in ${{ github.repository }} on ${{ github.ref_name }} (sha $SHORT_SHA)" \
-            --field source_build_context="$JSON" \
             --field built_package="$JSON"            
 
   rebuild-context:
