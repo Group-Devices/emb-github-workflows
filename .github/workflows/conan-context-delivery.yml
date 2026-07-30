@@ -189,6 +189,7 @@ jobs:
       - extract-collectors
     outputs:
       apt-repo-name: ${{ steps.set-apt-repo-name.outputs.apt-repo-name }}
+      manifest-release-name: ${{ steps.set-manifest-release-name.outputs.manifest-release-name }}
     steps:
       - name: Set repository authentication
         id: set-repository-authentication
@@ -286,6 +287,28 @@ jobs:
               cat output.json
               exit 1
             fi
+
+      - name: Set manifest release name
+        id: set-manifest-release-name
+        shell: bash
+        run: |
+            MANIFEST_RELEASE_PREFIX_NAME=${{ needs.extract-collectors.outputs.product_name }}
+            if [ "null" = "${MANIFEST_RELEASE_PREFIX_NAME}" ] || [ -z "${MANIFEST_RELEASE_PREFIX_NAME}" ]; then
+              echo "product_name null or empty : can not setup apt repository name"
+              exit 1
+            fi
+            if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+              MANIFEST_RELEASE_NAME="${MANIFEST_RELEASE_PREFIX_NAME}-v${GITHUB_REF_NAME}"
+            elif [ "${GITHUB_REF_TYPE}" = "branch" ] && [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+              MANIFEST_RELEASE_NAME="${MANIFEST_RELEASE_PREFIX_NAME}-${GITHUB_REF_NAME}"
+            elif [ "${GITHUB_REF_TYPE}" = "branch" ] && [[ "${GITHUB_REF_NAME}" == "release/"* ]]; then
+              MANIFEST_RELEASE_NAME="${MANIFEST_RELEASE_PREFIX_NAME}-${GITHUB_REF_NAME#release/*}"
+            else
+              echo "Not able to determine which repository to use for github ref type ${GITHUB_REF_TYPE} and github ref name ${GITHUB_REF_NAME}"
+              exit 1
+            fi
+            echo "MANIFEST_RELEASE_NAME=${MANIFEST_RELEASE_NAME}" >> "$GITHUB_ENV"
+            echo "manifest-release-name=${MANIFEST_RELEASE_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Ensure conan repository exists
         run: |
@@ -475,7 +498,7 @@ jobs:
             LOCKFILE=""
           fi
           ${{ env.CONAN }} remote disable "${{ needs.extract-collectors.outputs.conan_release_remote_name}}"
-          ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer release --deployer-folder=to_conan "$LOCKFILE" 
+          ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer release --deployer-folder=to_conan "$LOCKFILE"
           if [ "${{needs.extract-collectors.outputs.deliverable}}" = 'true' ]; then
             ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer delivery --deployer-folder=to_apt "$LOCKFILE"
           fi
@@ -604,6 +627,17 @@ jobs:
               curl --fail -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}" \
                 -H "Content-Type: multipart/form-data" --data-binary \
                 "@${deb}" "${NEXUS_URL}/repository/${{ needs.repositories-preparation.outputs.apt-repo-name }}/"
+            done
+
+      - name: Upload ManifestReleases delivery
+        if: needs.extract-collectors.outputs.deliverable == 'true'
+        run: |
+            for archive in ./to_apt/*.tgz; do
+              [ -f "$archive" ] || continue
+              echo "uploading ${archive} to ${NEXUS_URL}/repository/generic-manifest-releases/${{ steps.determine-delivery-name.outputs.delivery-name }}"
+              curl --fail -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}" \
+                -H "Content-Type: multipart/form-data" --data-binary \
+                "@${archive}" "${NEXUS_URL}/repository/generic-manifest-releases/${{ steps.determine-delivery-name.outputs.delivery-name }}"
             done
 
 
