@@ -88,7 +88,9 @@ jobs:
       - uses: $/.github/actions/generate-conan-context
         id: generate-conan-context
         with:
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
+          app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
   unit-tests:
     runs-on: eks-runner-linux-x64-medium
     if: inputs.run-as-fast-build == false && inputs.run-unit-tests
@@ -110,7 +112,9 @@ jobs:
       - name: Configure Conan
         uses: $/.github/actions/configure-conan
         with:
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
+          app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
 
       - run: bash test.sh
@@ -331,7 +335,9 @@ jobs:
       - name: Configure Conan
         uses: $/.github/actions/configure-conan
         with:
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
+          app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
 
       - name: Resolve Conan cache mode
@@ -354,6 +360,24 @@ jobs:
               exit 1
               ;;
           esac
+      - name: Authenticate for workflow helpers repository
+        id: auth-workflow-helpers
+        uses: $/.github/actions/gh-auth-owner
+        with:
+          owner: Group-Devices
+          json-variables: ${{ toJson(vars) }}
+          json-secrets: ${{ toJson(secrets) }}
+          app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
+
+      - name: Checkout workflow helpers
+        uses: actions/checkout@v6
+        with:
+          repository: Group-Devices/emb-github-workflows
+          ref: main
+          token: ${{ steps.auth-workflow-helpers.outputs.token }}
+          path: .workflow_helpers
+          sparse-checkout: |
+            .github/scripts
 
       - name: Export GitHub context to environment
         run: |
@@ -384,6 +408,8 @@ jobs:
           ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
         run: |
           set -o pipefail
+          source .workflow_helpers/.github/scripts/github_app_token.sh
+
           upload=$(yq e '.upload' "${CONAN_CONTEXT_PATH}")
           if [ -z "${upload}" ] || [ "null" = "${upload}" ]; then
             echo "Field upload is missing in ${CONAN_CONTEXT_PATH}"
@@ -416,18 +442,16 @@ jobs:
               OWNER="${OWNER#*/}"
               OWNER="${OWNER%/*}"
               echo "url $url sha $sha OWNER $OWNER"
-              OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
-              OWNER_GIT_TOKEN=$(printf '%s\n' "$ALL_SECRETS_JSON" | jq -r --arg name "$OWNER_GIT_TOKEN_SECRET" '.[$name]')
+              APP_CREDENTIAL_PREFIX='${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}'
+              OWNER_GIT_TOKEN=$(github_app_token_for_owner_from_payloads "${OWNER}" '${{ toJson(vars) }}' '${{ toJson(secrets) }}' "default" "${APP_CREDENTIAL_PREFIX}")
               if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
-                 echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
-                 echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
-                 exit 1
+                echo "Unable to generate GitHub App token for owner ${OWNER}"
+                exit 1
               else
-                 echo "Found secret ${OWNER_GIT_TOKEN_SECRET}"
+                echo "Generated GitHub App token for owner ${OWNER}"
               fi
-              echo "${OWNER_GIT_TOKEN}" > mytoken.txt
-              gh auth login --with-token < mytoken.txt
-              rm mytoken.txt              
+              export GH_TOKEN="${OWNER_GIT_TOKEN}"
+              export GITHUB_TOKEN="${OWNER_GIT_TOKEN}"
               echo "extracting package name and version from $ref"
               name="${ref%/*}"
               prev="${ref#*/}"
@@ -503,7 +527,9 @@ jobs:
         uses: $/.github/actions/gh-auth-owner
         with:
           owner: ${{ env.COLLECTOR_OWNER }}
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
+          app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
 
       - name: Check if repository ${{ matrix.collector }} exists
         run: |
@@ -573,7 +599,9 @@ jobs:
         uses: $/.github/actions/gh-auth-owner
         with:
           owner: ${{ env.CONTEXT_OWNER }}
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
+          app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
       - id: collector-context
         name: Build collector source context
         uses: $/.github/actions/build-source-build-context

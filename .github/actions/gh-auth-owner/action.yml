@@ -1,53 +1,71 @@
 name: Authenticate GitHub Owner
-description: Resolve an owner-scoped GitHub token from secrets JSON and authenticate gh.
+description: Generate an owner-scoped GitHub App installation token and authenticate gh.
 
 inputs:
   owner:
     description: GitHub owner or organization name.
     required: true
+  json-variables:
+    description: Serialized GitHub variables object.
+    required: false
+    default: '{}'
   json-secrets:
     description: Serialized GitHub secrets object.
     required: true
-  token-prefix:
-    description: Prefix used to build the secret name before the normalized owner.
+  app-credential-scope:
+    description: Credential scope used to resolve GitHub App secrets (default, release, etc.).
     required: false
-    default: GIT_TOKEN
-  help-owner:
-    description: Owner shown in the missing-secret help message.
+    default: default
+  app-credential-prefix:
+    description: Prefix used to resolve GitHub App variable and secret names.
     required: false
-    default: ''
+    default: GIT_GITHUB_APP
+
+outputs:
+  token:
+    description: Generated owner-scoped GitHub App installation token.
+    value: ${{ steps.generate-token.outputs.token }}
 
 runs:
   using: composite
   steps:
-    - name: Authenticate gh for owner
+    - name: Generate GitHub App token for owner
+      id: generate-token
       shell: bash
       run: |
         owner='${{ inputs.owner }}'
+        all_variables='${{ inputs.json-variables }}'
         all_secrets='${{ inputs.json-secrets }}'
-        token_prefix='${{ inputs.token-prefix }}'
-        help_owner='${{ inputs.help-owner }}'
+        credential_scope='${{ inputs.app-credential-scope }}'
+        credential_prefix='${{ inputs.app-credential-prefix }}'
 
         if [ -z "${owner}" ]; then
           echo "Input 'owner' is required"
           exit 1
         fi
 
-        if [ -z "${help_owner}" ]; then
-          help_owner="${GITHUB_REPOSITORY_OWNER}"
-        fi
+        source "${GITHUB_ACTION_PATH}/../../scripts/github_app_token.sh"
+        token=$(github_app_token_for_owner_from_payloads "${owner}" "${all_variables}" "${all_secrets}" "${credential_scope}" "${credential_prefix}")
 
-        token_secret_name="${token_prefix}_$(echo "${owner}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')"
-        echo "Looking for matching GitHub secret ${token_secret_name}"
-        owner_git_token=$(echo "$all_secrets" | jq -r ".${token_secret_name}")
-        if [ -z "${owner_git_token}" ] || [ "${owner_git_token}" = "null" ]; then
-          echo "Secret ${token_secret_name} not found !"
-          echo "Please add secret ${token_secret_name} to https://github.com/organizations/${help_owner}/settings/secrets/actions"
+        if [ -z "${token}" ]; then
+          echo "Failed to generate GitHub App token for owner ${owner}"
           exit 1
         fi
 
-        echo "::add-mask::${owner_git_token}"
+        echo "::add-mask::${token}"
+        echo "token=${token}" >> "$GITHUB_OUTPUT"
+
+    - name: Authenticate gh for owner
+      shell: bash
+      run: |
+        token='${{ steps.generate-token.outputs.token }}'
+        if [ -z "${token}" ]; then
+          echo "Missing generated token"
+          exit 1
+        fi
         token_file=$(mktemp)
         trap 'rm -f "${token_file}"' EXIT
-        printf '%s\n' "${owner_git_token}" > "${token_file}"
+        printf '%s\n' "${token}" > "${token_file}"
         gh auth login --with-token < "${token_file}"
+        echo "GH_TOKEN=${token}" >> "$GITHUB_ENV"
+        echo "GITHUB_TOKEN=${token}" >> "$GITHUB_ENV"

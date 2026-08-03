@@ -3,9 +3,17 @@ name: "action-configure-conan"
 description: "Configure conan according to https://kubapay.atlassian.net/wiki/spaces/VOQA/pages/716079105/Development+workflow"
 
 inputs:
+  json-variables:
+    description: "All variables in json format"
+    required: false
+    default: '{}'
   json-secrets:
     description: "All secrets in json format"
     required: true
+  app-credential-prefix:
+    description: "Prefix used to resolve GitHub App variable and secret names"
+    required: false
+    default: "GIT_GITHUB_APP"
   conan-context-path:
     description: "The path to the conan context file"
     required: true
@@ -21,7 +29,10 @@ runs:
     - name: Setup .NET
       shell: bash
       run: |
+        all_variables='${{ inputs.json-variables }}'
         all_secrets='${{ inputs.json-secrets }}'
+        credential_prefix='${{ inputs.app-credential-prefix }}'
+        source "${GITHUB_ACTION_PATH}/../../scripts/github_app_token.sh"
 
         git config --global url."https://github.com/".insteadOf git@github.com:
 
@@ -39,15 +50,13 @@ runs:
         else
           echo "Start conan git credentials configuration"
           for org in $organisations; do
-            secret_to_extract="GIT_TOKEN_$(echo $org | tr '[:lower:]' '[:upper:]' | tr '-' '_')"
-            echo "Extracting github secret $secret_to_extract for organisation $org"
-            secret=$(echo $all_secrets | jq -r ".$secret_to_extract")
-            if [ "null" = "$secret" ]; then
-              echo "Secret $secret_to_extract not found !"
-              echo "Please add secret $secret_to_extract to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
+            echo "Generating GitHub App token for organisation $org"
+            secret=$(github_app_token_for_owner_from_payloads "$org" "$all_variables" "$all_secrets" "default" "$credential_prefix")
+            if [ -z "$secret" ] || [ "null" = "$secret" ]; then
+              echo "Unable to generate GitHub App token for organisation $org"
               exit 1
             else
-              echo "Secret $secret_to_extract found !"
+              echo "GitHub App token generated for organisation $org"
               echo "Configure git conan credentials for https://github.com/$org"
               git config --global credential."https://github.com/$org".helper "!f() { sleep 1; echo \"username=github\"; echo \"password=${secret}\"; }; f"
             fi

@@ -329,3 +329,46 @@ The repository also contains reusable helper actions used by the workflows.
   - builds the generated documentation site used by context delivery
 
 These actions exist to keep the reusable workflows focused on orchestration while moving repeated contracts and shell logic into versioned helpers.
+
+## GitHub App authentication
+
+Workflows in this repository now use GitHub App installation tokens for cross-owner GitHub API and git operations.
+
+Required configuration for consumers of these reusable workflows:
+
+Credential prefix variable (optional):
+
+- GIT_GITHUB_APP_CREDENTIAL_PREFIX (default: GIT_GITHUB_APP)
+
+Variables:
+
+- <PREFIX>_ID
+
+Secrets:
+
+- <PREFIX>_PRIVATE_KEY
+
+Optional secrets for release-scoped operations (recommended when using stricter privilege separation):
+
+Variables:
+
+- <PREFIX>_ID_RELEASE
+
+Secrets:
+
+- <PREFIX>_PRIVATE_KEY_RELEASE
+
+The GitHub App must be installed on each target owner (organization or user) that the workflow needs to access.
+
+When release-scoped configuration is present, release-sensitive steps use it. Otherwise workflows fall back to default-scope credentials using the same prefix.
+
+App ID must be provided via variables. Private keys must be provided via secrets.
+
+## Deprecated GitHub token secrets
+
+Owner-scoped GitHub token secrets are no longer used for GitHub access:
+
+- GIT_TOKEN_<OWNER>
+- GIT_TOKEN_RELEASE_<OWNER>
+
+Nexus and other non-GitHub credentials are unchanged and still required where applicable.

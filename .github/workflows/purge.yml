@@ -264,7 +264,9 @@ jobs:
       - name: Configure conan
         uses: $/.github/actions/configure-conan
         with:
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
+          app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
 
       - name: Add original repository in configuration

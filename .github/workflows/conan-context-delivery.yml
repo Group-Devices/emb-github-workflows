@@ -464,8 +464,29 @@ jobs:
       - name: Configure conan
         uses: $/.github/actions/configure-conan
         with:
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
+          app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
+
+      - name: Authenticate for workflow helpers repository
+        id: auth-workflow-helpers
+        uses: $/.github/actions/gh-auth-owner
+        with:
+          owner: Group-Devices
+          json-variables: ${{ toJson(vars) }}
+          json-secrets: ${{ toJson(secrets) }}
+          app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
+
+      - name: Checkout workflow helpers
+        uses: actions/checkout@v6
+        with:
+          repository: Group-Devices/emb-github-workflows
+          ref: main
+          token: ${{ steps.auth-workflow-helpers.outputs.token }}
+          path: .workflow_helpers
+          sparse-checkout: |
+            .github/scripts
 
       - name: Resolve Conan cache mode
         run: |
@@ -552,6 +573,8 @@ jobs:
         env:
           ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
         run: |
+          source .workflow_helpers/.github/scripts/github_app_token.sh
+
           DELIVERY_NAME=${{ needs.preflight-checks.outputs.delivery-name }}
           echo "Start upload release packages"
           AUTHENTICATED_OWNER=""
@@ -570,20 +593,17 @@ jobs:
             URL_REL=${URL_REL%.git}
             OWNER=$(echo "${URL_REL}" | cut -d'/' -f1)
             if [ "${AUTHENTICATED_OWNER}" != "${OWNER}" ]; then
-              echo "Extracting github token secret for org ${OWNER}"
-              OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_RELEASE_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
-              echo "Looking for matching github secret ${OWNER_GIT_TOKEN_SECRET}"
-              OWNER_GIT_TOKEN=$(printf '%s\n' "$ALL_SECRETS_JSON" | jq -r --arg name "$OWNER_GIT_TOKEN_SECRET" '.[$name]')
+              echo "Generating GitHub App token for org ${OWNER}"
+              APP_CREDENTIAL_PREFIX='${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}'
+              OWNER_GIT_TOKEN=$(github_app_token_for_owner_from_payloads "${OWNER}" '${{ toJson(vars) }}' '${{ toJson(secrets) }}' "release" "${APP_CREDENTIAL_PREFIX}")
               if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
-                echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
-                echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
+                echo "Unable to generate GitHub App token for org ${OWNER}"
                 exit 1
               else
-                echo "Found secret ${OWNER_GIT_TOKEN_SECRET}"
+                echo "GitHub App token generated for org ${OWNER}"
               fi
-              echo "${OWNER_GIT_TOKEN}" > mytoken.txt
-              gh auth login --with-token < mytoken.txt
-              rm mytoken.txt
+              export GH_TOKEN="${OWNER_GIT_TOKEN}"
+              export GITHUB_TOKEN="${OWNER_GIT_TOKEN}"
               AUTHENTICATED_OWNER="${OWNER}"
             else
               echo "GitHub owner ${OWNER} already authenticated, reusing existing gh session"
@@ -690,6 +710,7 @@ jobs:
               fi
             fi
           done
+
       - name: Upload apt delivery
         if: needs.extract-collectors.outputs.deliverable == 'true'
         run: |
@@ -742,7 +763,9 @@ jobs:
       - name: Configure conan
         uses: $/.github/actions/configure-conan
         with:
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
+          app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
       - name: Resolve Conan cache mode
         run: |
@@ -893,12 +916,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Authenticate gh for current repository owner
+      - name: Authenticate gh for current repository owner (release scope)
         uses: $/.github/actions/gh-auth-owner
         with:
           owner: ${{ github.repository_owner }}
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
-          token-prefix: GIT_TOKEN_RELEASE
+          app-credential-scope: release
+          app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
 
       - name: remove clone request if any
         id: finalize
@@ -955,7 +980,9 @@ jobs:
         uses: $/.github/actions/gh-auth-owner
         with:
           owner: ${{ env.OWNER }}
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
+          app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
 
       - name: Check if repository ${{ matrix.collector }} exists
         run: |

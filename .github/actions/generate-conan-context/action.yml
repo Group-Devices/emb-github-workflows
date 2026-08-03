@@ -3,9 +3,17 @@ name: "action-configure-conan"
 description: "Configure conan according to https://kubapay.atlassian.net/wiki/spaces/VOQA/pages/716079105/Development+workflow"
 
 inputs:
+  json-variables:
+    description: "All variables in json format"
+    required: false
+    default: '{}'
   json-secrets:
     description: "All secrets in json format"
     required: true
+  app-credential-prefix:
+    description: "Prefix used to resolve GitHub App variable and secret names"
+    required: false
+    default: "GIT_GITHUB_APP"
   override-branch-ref:
     description: "The branch ref to use instead of actual GITHUB_REF"
     required: false
@@ -62,6 +70,9 @@ runs:
       id: generate-conan-context
       shell: bash
       run: |
+        source "${GITHUB_ACTION_PATH}/../../scripts/github_app_token.sh"
+        credential_prefix='${{ inputs.app-credential-prefix }}'
+
         echo "Search for bundle/user field in conanfile"
         bundle=$(python3 extract-conanfile-field.py bundle)
         if [ -z "$bundle" ] || [ "$bundle" = "None" ]; then
@@ -100,17 +111,13 @@ runs:
 
         mkdir -p .conan-context
 
-        OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_$(echo "$owner" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
-        all_secrets='${{ inputs.json-secrets }}'
-        OWNER_GIT_TOKEN=$(echo $all_secrets | jq -r ".${OWNER_GIT_TOKEN_SECRET}")
-        all_secrets=''
+        OWNER_GIT_TOKEN=$(github_app_token_for_owner_from_payloads "$owner" '${{ inputs.json-variables }}' '${{ inputs.json-secrets }}' "default" "$credential_prefix")
 
         if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
-          echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
-          echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
+          echo "Unable to generate GitHub App token for owner ${owner}"
           exit 1
         else
-          echo "Found secret ${OWNER_GIT_TOKEN_SECRET} that will be use to download conan context at ${CONAN_CONTEXT_URL}"
+          echo "Generated GitHub App token to download conan context at ${CONAN_CONTEXT_URL}"
         fi
 
         echo "Will download conan context at: ${CONAN_CONTEXT_URL}?ref=${REF}"
