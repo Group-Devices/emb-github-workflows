@@ -8,15 +8,18 @@ import sys
 from pathlib import Path
 
 
-def version_sort_key(name: str) -> tuple[int, list[object]]:
+def version_sort_key(name: str) -> tuple[int, tuple[tuple[int, int | str], ...]]:
     if name == "main":
-        return (0, [])
+        return (0, ())
     if name.startswith("release-"):
-        parts = []
-        for item in name.removeprefix("release-").split("."):
-            parts.append(int(item) if item.isdigit() else item)
+        # Keep numeric and textual components comparable. A release label may
+        # contain both (for example, "release-1.0-rc1").
+        parts = tuple(
+            (0, int(item)) if item.isdigit() else (1, item.casefold())
+            for item in name.removeprefix("release-").split(".")
+        )
         return (1, parts)
-    return (2, [name])
+    return (2, ((1, name.casefold()),))
 
 
 def display_name(name: str) -> str:
