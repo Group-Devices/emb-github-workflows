@@ -378,6 +378,8 @@ jobs:
 
       - name: Conan create
         shell: bash
+        env:
+          ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
         run: |
           set -o pipefail
           upload=$(yq e '.upload' "${CONAN_CONTEXT_PATH}")
@@ -412,10 +414,7 @@ jobs:
               OWNER="${OWNER%/*}"
               echo "url $url sha $sha OWNER $OWNER"
               OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
-              # shellcheck disable=SC2086
-              all_secrets='${{ tojson(secrets) }}'
-              OWNER_GIT_TOKEN=$(echo "$all_secrets" | jq -r ".${OWNER_GIT_TOKEN_SECRET}")
-              all_secrets=''
+              OWNER_GIT_TOKEN=$(printf '%s\n' "$ALL_SECRETS_JSON" | jq -r --arg name "$OWNER_GIT_TOKEN_SECRET" '.[$name]')
               if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
                  echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
                  echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
