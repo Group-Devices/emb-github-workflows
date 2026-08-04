@@ -240,7 +240,7 @@ jobs:
 
           RELEASE_REGISTRY_USERNAME_SECRET=REPOSITORY_USERNAME_$(echo "${repository_hostname}" | tr '[:lower:]' '[:upper:]' | tr '-' '_' | tr '.' '_')
           echo "Looking for matching github secret ${RELEASE_REGISTRY_USERNAME_SECRET}"
-          RELEASE_REGISTRY_USERNAME=$(jq -r --arg name "$RELEASE_REGISTRY_USERNAME_SECRET" '.[$name]' <<<"$ALL_SECRETS_JSON")
+          RELEASE_REGISTRY_USERNAME=$(printf '%s\n' "$ALL_SECRETS_JSON" | jq -r --arg name "$RELEASE_REGISTRY_USERNAME_SECRET" '.[$name]')
           if [ -z "${RELEASE_REGISTRY_USERNAME}" ] || [ "null" = "${RELEASE_REGISTRY_USERNAME}" ]; then
             echo "Secret ${RELEASE_REGISTRY_USERNAME_SECRET} not found !"
             echo "Please add secret ${RELEASE_REGISTRY_USERNAME_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
@@ -251,7 +251,7 @@ jobs:
 
           RELEASE_REGISTRY_TOKEN_SECRET=REPOSITORY_TOKEN_$(echo "${repository_hostname}" | tr '[:lower:]' '[:upper:]' | tr '-' '_' | tr '.' '_')
           echo "Looking for matching github secret ${RELEASE_REGISTRY_TOKEN_SECRET}"
-          RELEASE_REGISTRY_TOKEN=$(jq -r --arg name "$RELEASE_REGISTRY_TOKEN_SECRET" '.[$name]' <<<"$ALL_SECRETS_JSON")
+          RELEASE_REGISTRY_TOKEN=$(printf '%s\n' "$ALL_SECRETS_JSON" | jq -r --arg name "$RELEASE_REGISTRY_TOKEN_SECRET" '.[$name]')
           if [ -z "${RELEASE_REGISTRY_TOKEN}" ] || [ "null" = "${RELEASE_REGISTRY_TOKEN}" ]; then
             echo "Secret ${RELEASE_REGISTRY_TOKEN_SECRET} not found !"
             echo "Please add secret ${RELEASE_REGISTRY_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
@@ -381,7 +381,7 @@ jobs:
           almUrl=$(yq -r ".almRelease.almUrl" "${CONAN_CONTEXT_PATH}")
           username_secret_var=$(yq -r ".almRelease.almUsernameSecret" "${CONAN_CONTEXT_PATH}")
           echo "Looking for matching github secret ${username_secret_var}"
-          username_secret=$(jq -r --arg name "$username_secret_var" '.[$name]' <<<"$ALL_SECRETS_JSON")
+          username_secret=$(printf '%s\n' "$ALL_SECRETS_JSON" | jq -r --arg name "$username_secret_var" '.[$name]')
           if [ -z "${username_secret}" ] || [ "null" = "${username_secret}" ]; then
             echo "Secret ${username_secret_var} not found !"
             echo "Please add secret ${username_secret_var} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
@@ -391,7 +391,7 @@ jobs:
           fi
           password_secret_var=$(yq -r ".almRelease.almPasswordSecret" "${CONAN_CONTEXT_PATH}")
           echo "Looking for matching github secret ${password_secret_var}"
-          password_secret=$(jq -r --arg name "$password_secret_var" '.[$name]' <<<"$ALL_SECRETS_JSON")
+          password_secret=$(printf '%s\n' "$ALL_SECRETS_JSON" | jq -r --arg name "$password_secret_var" '.[$name]')
           if [ -z "${password_secret}" ] || [ "null" = "${password_secret}" ]; then
             echo "Secret ${password_secret_var} not found !"
             echo "Please add secret ${password_secret_var} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
@@ -509,7 +509,7 @@ jobs:
           repo_url_target=$(echo "$from_repository_url" | sed -e 's/https:\/\///' -e 's/\/.*//')
           secret_username_to_extract=REPOSITORY_USERNAME_$(echo "$repo_url_target" | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')
           echo "Extracting github secret ${secret_username_to_extract}"
-          secret_username=$(jq -r --arg name "$secret_username_to_extract" '.[$name]' <<<"$ALL_SECRETS_JSON")
+          secret_username=$(printf '%s\n' "$ALL_SECRETS_JSON" | jq -r --arg name "$secret_username_to_extract" '.[$name]')
           if [ "null" = "${secret_username}" ] || [ -z "${secret_username}" ]; then
             echo "Secret ${secret_username_to_extract} not found !"
             echo "Please add secret ${secret_username_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
@@ -517,7 +517,7 @@ jobs:
           fi
           secret_token_to_extract=REPOSITORY_TOKEN_$(echo "$repo_url_target" | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')
           echo "Extracting github secret ${secret_token_to_extract}"
-          secret_token=$(jq -r --arg name "$secret_token_to_extract" '.[$name]' <<<"$ALL_SECRETS_JSON")
+          secret_token=$(printf '%s\n' "$ALL_SECRETS_JSON" | jq -r --arg name "$secret_token_to_extract" '.[$name]')
           if [ "null" = "${secret_token}" ] || [ -z "${secret_token}" ]; then
             echo "Secret ${secret_token_to_extract} not found !"
             echo "Please add secret ${secret_token_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
@@ -571,7 +571,7 @@ jobs:
               echo "Extracting github token secret for org ${OWNER}"
               OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_RELEASE_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
               echo "Looking for matching github secret ${OWNER_GIT_TOKEN_SECRET}"
-              OWNER_GIT_TOKEN=$(jq -r --arg name "$OWNER_GIT_TOKEN_SECRET" '.[$name]' <<<"$ALL_SECRETS_JSON")
+              OWNER_GIT_TOKEN=$(printf '%s\n' "$ALL_SECRETS_JSON" | jq -r --arg name "$OWNER_GIT_TOKEN_SECRET" '.[$name]')
               if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
                 echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
                 echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
