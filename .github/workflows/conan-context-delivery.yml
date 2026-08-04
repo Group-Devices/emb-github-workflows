@@ -231,17 +231,16 @@ jobs:
     steps:
       - name: Set repository authentication
         id: set-repository-authentication
+        env:
+          ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
         run: |
           conan_release_remote_url="${{ needs.extract-collectors.outputs.conan_release_remote_url }}"
           repository_hostname=$(echo "${conan_release_remote_url}" | cut -d'/' -f3 | cut -d':' -f1)
           echo "Extracting github token secret for repository ${repository_hostname}"
 
-          # shellcheck disable=SC2086
-          all_secrets='${{ tojson(secrets) }}'
-
           RELEASE_REGISTRY_USERNAME_SECRET=REPOSITORY_USERNAME_$(echo "${repository_hostname}" | tr '[:lower:]' '[:upper:]' | tr '-' '_' | tr '.' '_')
           echo "Looking for matching github secret ${RELEASE_REGISTRY_USERNAME_SECRET}"
-          RELEASE_REGISTRY_USERNAME=$(echo "$all_secrets" | jq -r ".${RELEASE_REGISTRY_USERNAME_SECRET}")
+          RELEASE_REGISTRY_USERNAME=$(jq -r --arg name "$RELEASE_REGISTRY_USERNAME_SECRET" '.[$name]' <<<"$ALL_SECRETS_JSON")
           if [ -z "${RELEASE_REGISTRY_USERNAME}" ] || [ "null" = "${RELEASE_REGISTRY_USERNAME}" ]; then
             echo "Secret ${RELEASE_REGISTRY_USERNAME_SECRET} not found !"
             echo "Please add secret ${RELEASE_REGISTRY_USERNAME_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
@@ -252,8 +251,7 @@ jobs:
 
           RELEASE_REGISTRY_TOKEN_SECRET=REPOSITORY_TOKEN_$(echo "${repository_hostname}" | tr '[:lower:]' '[:upper:]' | tr '-' '_' | tr '.' '_')
           echo "Looking for matching github secret ${RELEASE_REGISTRY_TOKEN_SECRET}"
-          RELEASE_REGISTRY_TOKEN=$(echo "$all_secrets" | jq -r ".${RELEASE_REGISTRY_TOKEN_SECRET}")
-          all_secrets=''
+          RELEASE_REGISTRY_TOKEN=$(jq -r --arg name "$RELEASE_REGISTRY_TOKEN_SECRET" '.[$name]' <<<"$ALL_SECRETS_JSON")
           if [ -z "${RELEASE_REGISTRY_TOKEN}" ] || [ "null" = "${RELEASE_REGISTRY_TOKEN}" ]; then
             echo "Secret ${RELEASE_REGISTRY_TOKEN_SECRET} not found !"
             echo "Please add secret ${RELEASE_REGISTRY_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
@@ -367,6 +365,8 @@ jobs:
 
       - name: Create ALM release
         shell: bash
+        env:
+          ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
         run: |
           set -x
           set +e
@@ -379,10 +379,9 @@ jobs:
           fi
           # Retrieve url username and password
           almUrl=$(yq -r ".almRelease.almUrl" "${CONAN_CONTEXT_PATH}")
-          all_secrets='${{ tojson(secrets) }}'
           username_secret_var=$(yq -r ".almRelease.almUsernameSecret" "${CONAN_CONTEXT_PATH}")
           echo "Looking for matching github secret ${username_secret_var}"
-          username_secret=$(echo "$all_secrets" | jq -r ".${username_secret_var}")
+          username_secret=$(jq -r --arg name "$username_secret_var" '.[$name]' <<<"$ALL_SECRETS_JSON")
           if [ -z "${username_secret}" ] || [ "null" = "${username_secret}" ]; then
             echo "Secret ${username_secret_var} not found !"
             echo "Please add secret ${username_secret_var} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
@@ -392,7 +391,7 @@ jobs:
           fi
           password_secret_var=$(yq -r ".almRelease.almPasswordSecret" "${CONAN_CONTEXT_PATH}")
           echo "Looking for matching github secret ${password_secret_var}"
-          password_secret=$(echo "$all_secrets" | jq -r ".${password_secret_var}")
+          password_secret=$(jq -r --arg name "$password_secret_var" '.[$name]' <<<"$ALL_SECRETS_JSON")
           if [ -z "${password_secret}" ] || [ "null" = "${password_secret}" ]; then
             echo "Secret ${password_secret_var} not found !"
             echo "Please add secret ${password_secret_var} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
@@ -502,14 +501,15 @@ jobs:
           cache-mode: ${{ env.CACHE_MODE }}
 
       - name: Add original repository in configuration
+        env:
+          ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
         run: |
           from_repository_url=${{ needs.extract-collectors.outputs.from_repository_url }}
           echo "Add conan authentication for FROM repository ${from_repository_url}"
           repo_url_target=$(echo "$from_repository_url" | sed -e 's/https:\/\///' -e 's/\/.*//')
           secret_username_to_extract=REPOSITORY_USERNAME_$(echo "$repo_url_target" | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')
           echo "Extracting github secret ${secret_username_to_extract}"
-          all_secrets='${{ tojson(secrets) }}'
-          secret_username=$(echo "$all_secrets" | jq -r ".${secret_username_to_extract}")
+          secret_username=$(jq -r --arg name "$secret_username_to_extract" '.[$name]' <<<"$ALL_SECRETS_JSON")
           if [ "null" = "${secret_username}" ] || [ -z "${secret_username}" ]; then
             echo "Secret ${secret_username_to_extract} not found !"
             echo "Please add secret ${secret_username_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
@@ -517,13 +517,12 @@ jobs:
           fi
           secret_token_to_extract=REPOSITORY_TOKEN_$(echo "$repo_url_target" | tr '[:lower:]' '[:upper:]' | tr '.' '_' | tr '-' '_')
           echo "Extracting github secret ${secret_token_to_extract}"
-          secret_token=$(echo "$all_secrets" | jq -r ".${secret_token_to_extract}")
+          secret_token=$(jq -r --arg name "$secret_token_to_extract" '.[$name]' <<<"$ALL_SECRETS_JSON")
           if [ "null" = "${secret_token}" ] || [ -z "${secret_token}" ]; then
             echo "Secret ${secret_token_to_extract} not found !"
             echo "Please add secret ${secret_token_to_extract} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
             exit 1
           fi
-          all_secrets=''
           ${{ env.CONAN }} remote add "FROM" "${from_repository_url}" --force
           ${{ env.CONAN }} remote login -p "${secret_token}" "FROM" "${secret_username}"
 
@@ -548,13 +547,13 @@ jobs:
 
       - name: Upload to conan
         id: upload
+        env:
+          ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
         run: |
           DELIVERY_NAME=${{ needs.preflight-checks.outputs.delivery-name }}
           echo "Start upload release packages"
           AUTHENTICATED_OWNER=""
           OWNER_GIT_TOKEN=""
-          # shellcheck disable=SC2086
-          all_secrets='${{ tojson(secrets) }}'
           jq -c '.[] ' ./to_conan/packages.json | while read -r repository ; do \
             package=$(echo "$repository" | jq -r .name)
             version=$(echo "$repository" | jq -r .version)
@@ -572,7 +571,7 @@ jobs:
               echo "Extracting github token secret for org ${OWNER}"
               OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_RELEASE_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
               echo "Looking for matching github secret ${OWNER_GIT_TOKEN_SECRET}"
-              OWNER_GIT_TOKEN=$(echo "$all_secrets" | jq -r ".${OWNER_GIT_TOKEN_SECRET}")
+              OWNER_GIT_TOKEN=$(jq -r --arg name "$OWNER_GIT_TOKEN_SECRET" '.[$name]' <<<"$ALL_SECRETS_JSON")
               if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
                 echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
                 echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
@@ -689,8 +688,6 @@ jobs:
               fi
             fi
           done
-          all_secrets=''
-
       - name: Upload apt delivery
         if: needs.extract-collectors.outputs.deliverable == 'true'
         run: |
