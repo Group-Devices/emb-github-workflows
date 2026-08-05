@@ -21,27 +21,16 @@ runs:
     - name: Run docs helper command
       shell: bash
       run: |
-        echo "action_path=${{ github.action_path }}"
-        echo "---"
-        pwd
-        echo "---"
-        ls -la "${{ github.action_path }}"
-        echo "---"
-        find "${{ github.action_path }}" -maxdepth 2 -type f
-        echo "---"
-        ls -la "/home/runner/_work/_actions/Group-Devices/emb-github-workflows/"
-        echo "---"
-
         case "${{ inputs.command }}" in
           build-site)
-            python3 "${{ github.action_path }}/build_bundle_docs.py"
+            python3 "${GITHUB_ACTION_PATH}/build_bundle_docs.py"
             ;;
           build-versions-index)
             if [ -z "${{ inputs.current-version }}" ]; then
               echo "Input 'current-version' is required when command is 'build-versions-index'"
               exit 1
             fi
-            python3 "${{ github.action_path }}/build_versions_index.py" "${{ inputs.versions-root }}" "${{ inputs.current-version }}"
+            python3 "${GITHUB_ACTION_PATH}/build_versions_index.py" "${{ inputs.versions-root }}" "${{ inputs.current-version }}"
             ;;
           *)
             echo "Unsupported command: ${{ inputs.command }}"
