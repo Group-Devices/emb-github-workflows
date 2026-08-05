@@ -21,6 +21,17 @@ runs:
     - name: Run docs helper command
       shell: bash
       run: |
+        echo "action_path=${{ github.action_path }}"
+        echo "---"
+        pwd
+        echo "---"
+        ls -la "${{ github.action_path }}"
+        echo "---"
+        find "${{ github.action_path }}" -maxdepth 2 -type f
+        echo "---"
+        ls -la "/home/runner/_work/_actions/Group-Devices/emb-github-workflows/"
+        echo "---"
+
         case "${{ inputs.command }}" in
           build-site)
             python3 "${{ github.action_path }}/build_bundle_docs.py"
