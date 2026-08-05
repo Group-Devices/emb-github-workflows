@@ -69,6 +69,21 @@ runs:
         echo "Will use conan_config_url: ${conan_config_url}, conan_config_branch: ${conan_config_branch}"
         conan config install "${conan_config_url}" --args="-b ${conan_config_branch}"
 
+        context_conan_conf=$(yq eval '.build.conan_conf // {}' -o=json "${{ inputs.conan-context-path }}")
+        if ! printf '%s\n' "$context_conan_conf" | jq -e 'type == "object"' >/dev/null; then
+          echo "build.conan_conf must be an object when present"
+          exit 1
+        fi
+        if [ "$context_conan_conf" != "{}" ]; then
+          echo "Apply Conan configuration from context"
+          context_conan_conf_entries=$(printf '%s\n' "$context_conan_conf" | jq -r 'to_entries[] | [.key, (.value | tostring)] | @tsv')
+          while IFS=$'\t' read -r key value; do
+            [ -n "$key" ] || continue
+            echo "Configure Conan setting $key"
+            printf '%s=%s\n' "$key" "$value" >> "$(conan config home)/global.conf"
+          done <<< "$context_conan_conf_entries"
+        fi
+
         echo "Start conan remotes configuration"
         repositories=$(yq eval '.repositories' ${{ inputs.conan-context-path }} -o=json | jq)
 
