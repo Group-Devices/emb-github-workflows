@@ -793,18 +793,9 @@ jobs:
           name: packages-release-default
           path: ./docs_metadata
 
-      - name: Checkout workflow helpers
-        uses: actions/checkout@v6
-        with:
-          repository: Group-Devices/emb-github-workflows
-          ref: release/v1.0
-          path: .workflow_helpers
-          sparse-checkout: |
-            .github/actions/build-bundle-docs
-
       - name: Build bundle docs site
-        run: |
-          python3 .workflow_helpers/.github/actions/build-bundle-docs/build_bundle_docs.py
+        uses: $/.github/actions/build-bundle-docs
+        
       - name: Upload bundle docs site
         uses: actions/upload-artifact@v6
         with:
@@ -825,25 +816,21 @@ jobs:
           name: docs-default
           path: ./to_docs_site
 
-      - name: Checkout workflow helpers
-        uses: actions/checkout@v6
-        with:
-          repository: Group-Devices/emb-github-workflows
-          ref: release/v1.0
-          path: .workflow_helpers
-          sparse-checkout: |
-            .github/actions/build-bundle-docs
-
       - name: Determine docs version
+        id: determine-docs-version
         run: |
           if [ "${GITHUB_REF_NAME}" = "main" ]; then
             echo "DOCS_VERSION=main" >> "$GITHUB_ENV"
+            echo "docs-version=main" >> "$GITHUB_OUTPUT"
           elif [[ "${GITHUB_REF_NAME}" == release/* ]]; then
             echo "DOCS_VERSION=release-${GITHUB_REF_NAME#release/}" >> "$GITHUB_ENV"
+            echo "docs-version=release-${GITHUB_REF_NAME#release/}" >> "$GITHUB_OUTPUT"
           elif [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             echo "DOCS_VERSION=tag-${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+            echo "docs-version=tag-${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           else
             echo "DOCS_VERSION=${GITHUB_REF_NAME//\//-}" >> "$GITHUB_ENV"
+            echo "docs-version=${GITHUB_REF_NAME//\//-}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Authenticate gh for current repository owner
@@ -853,7 +840,7 @@ jobs:
           json-secrets: ${{ toJson(secrets) }}
           token-prefix: GIT_TOKEN_RELEASE
 
-      - name: Publish versioned docs to gh-pages
+      - name: Pull docs folder
         run: |
           gh auth setup-git
           git clone "https://github.com/${GITHUB_REPOSITORY}.git" .pages
@@ -870,10 +857,20 @@ jobs:
           mkdir -p "${DOCS_VERSION}"
           cp -a ../to_docs_site/. "${DOCS_VERSION}/"
           touch .nojekyll
-          python3 ../.workflow_helpers/.github/actions/build-bundle-docs/build_versions_index.py . "${DOCS_VERSION}"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Build versions index
+        uses: $/.github/actions/build-bundle-docs
+        with:
+          command: build-versions-index
+          versions-root: ./.pages
+          current-version: ${{ steps.determine-docs-version.outputs.docs-version }}
+
+      - name: Commit and push docs changes
+        run: |
+          cd .pages
           git add .
           if git diff --cached --quiet; then
             echo "No docs changes to publish"
