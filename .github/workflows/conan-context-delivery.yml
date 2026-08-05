@@ -462,7 +462,7 @@ jobs:
           git config --global --add safe.directory "/__w/${repo}/${repo}"
 
       - name: Configure conan
-        uses: Group-Devices/emb-github-workflows/.github/actions/configure-conan@release/v1.0
+        uses: $/.github/actions/configure-conan
         with:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
@@ -489,7 +489,7 @@ jobs:
           esac
 
       - name: Restore Conan build state
-        uses: Group-Devices/emb-github-workflows/.github/actions/restore-conan-build-state@release/v1.0
+        uses: $/.github/actions/restore-conan-build-state
         with:
           source-build-context: ${{ inputs.source_build_context }}
           context-key: collector_context
@@ -738,7 +738,7 @@ jobs:
           git config --global --add safe.directory "/__w/${repo}/${repo}"
 
       - name: Configure conan
-        uses: Group-Devices/emb-github-workflows/.github/actions/configure-conan@release/v1.0
+        uses: $/.github/actions/configure-conan
         with:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
@@ -763,7 +763,7 @@ jobs:
               ;;
           esac
       - name: Restore Conan build state
-        uses: Group-Devices/emb-github-workflows/.github/actions/restore-conan-build-state@release/v1.0
+        uses: $/.github/actions/restore-conan-build-state
         with:
           source-build-context: ${{ inputs.source_build_context }}
           context-key: collector_context
@@ -847,7 +847,7 @@ jobs:
           fi
 
       - name: Authenticate gh for current repository owner
-        uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@release/v1.0
+        uses: $/.github/actions/gh-auth-owner
         with:
           owner: ${{ github.repository_owner }}
           json-secrets: ${{ toJson(secrets) }}
@@ -894,7 +894,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Authenticate gh for current repository owner
-        uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@release/v1.0
+        uses: $/.github/actions/gh-auth-owner
         with:
           owner: ${{ github.repository_owner }}
           json-secrets: ${{ toJson(secrets) }}
@@ -952,7 +952,7 @@ jobs:
           echo "OWNER=${owner}" >> "$GITHUB_ENV"
 
       - name: Extract authentication token for ${{ env.OWNER }}
-        uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@release/v1.0
+        uses: $/.github/actions/gh-auth-owner
         with:
           owner: ${{ env.OWNER }}
           json-secrets: ${{ toJson(secrets) }}
