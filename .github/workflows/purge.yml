@@ -308,7 +308,7 @@ jobs:
           echo "{}" > pkglist.json
           yq -r ".build.profiles[]" ./conan-context.yml > tmp_input
           while read -r profile ; do
-              # shellcheck disable=SC2086
+              # shellcheck disable=SC2086 # Split requires and the generated -c options.
               conan install ${requires} -pr:h "${profile}" $CONAN_CONTEXT_CONF_ARGS --format=json > graph-${profile}.json
               # Transform into pkglist
               # shellcheck disable=SC2086
