@@ -85,7 +85,7 @@ jobs:
       collectors-list: ${{ steps.generate-conan-context.outputs.collectors-list }}
     steps:
       - uses: actions/checkout@v6
-      - uses: Group-Devices/emb-github-workflows/.github/actions/generate-conan-context@release/v1.0
+      - uses: $/.github/actions/generate-conan-context
         id: generate-conan-context
         with:
           json-secrets: ${{ toJson(secrets) }}
@@ -108,7 +108,7 @@ jobs:
           name: conan-context
           path: .conan-context
       - name: Configure Conan
-        uses: Group-Devices/emb-github-workflows/.github/actions/configure-conan@release/v1.0
+        uses: $/.github/actions/configure-conan
         with:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
@@ -183,7 +183,7 @@ jobs:
           path: .conan-context
 
       - name: Configure Conan
-        uses: Group-Devices/emb-github-workflows/.github/actions/configure-conan@release/v1.0
+        uses: $/.github/actions/configure-conan
         with:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
@@ -329,7 +329,7 @@ jobs:
           name: conan-context
           path: .conan-context
       - name: Configure Conan
-        uses: Group-Devices/emb-github-workflows/.github/actions/configure-conan@release/v1.0
+        uses: $/.github/actions/configure-conan
         with:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
@@ -370,7 +370,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Restore Conan build state
-        uses: Group-Devices/emb-github-workflows/.github/actions/restore-conan-build-state@release/v1.0
+        uses: $/.github/actions/restore-conan-build-state
         with:
           source-build-context: ${{ inputs.source-build-context != '' && inputs.source-build-context || inputs.force-build }}
           json-secrets: ${{ toJson(secrets) }}
@@ -467,7 +467,7 @@ jobs:
 
       - if: ${{ github.event_name != 'pull_request' }}
         name: Upload Conan build state
-        uses: Group-Devices/emb-github-workflows/.github/actions/upload-conan-build-state@release/v1.0
+        uses: $/.github/actions/upload-conan-build-state
         with:
           profile: ${{ matrix.profile }}
           cache-mode: ${{ env.CACHE_MODE }}
@@ -500,7 +500,7 @@ jobs:
           echo "COLLECTOR_OWNER=${owner}" >> "$GITHUB_ENV"
 
       - name: Extract authentication token for ${{ env.COLLECTOR_OWNER }}
-        uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@release/v1.0
+        uses: $/.github/actions/gh-auth-owner
         with:
           owner: ${{ env.COLLECTOR_OWNER }}
           json-secrets: ${{ toJson(secrets) }}
@@ -534,7 +534,7 @@ jobs:
 
       - id: package-context
         name: Build package source context
-        uses: Group-Devices/emb-github-workflows/.github/actions/build-source-build-context@release/v1.0
+        uses: $/.github/actions/build-source-build-context
         with:
           append-key: package_context
 
@@ -570,13 +570,13 @@ jobs:
           echo "Owner: ${OWNER}"
           echo "CONTEXT_OWNER=${OWNER}" >> "$GITHUB_ENV"
       - name: Extract authentication token
-        uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@release/v1.0
+        uses: $/.github/actions/gh-auth-owner
         with:
           owner: ${{ env.CONTEXT_OWNER }}
           json-secrets: ${{ toJson(secrets) }}
       - id: collector-context
         name: Build collector source context
-        uses: Group-Devices/emb-github-workflows/.github/actions/build-source-build-context@release/v1.0
+        uses: $/.github/actions/build-source-build-context
         with:
           append-key: collector_context
           incoming-context: ${{ inputs.source-build-context }}

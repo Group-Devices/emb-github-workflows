@@ -82,7 +82,7 @@ runs:
 
     - if: ${{ steps.resolve-source.outputs.source-owner != '' }}
       name: Authenticate gh for source owner
-      uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@release/v1.0
+      uses: $/.github/actions/gh-auth-owner
       with:
         owner: ${{ steps.resolve-source.outputs.source-owner }}
         json-secrets: ${{ inputs.json-secrets }}
