@@ -66,7 +66,7 @@ github_app_token_for_owner() {
   local api_url="${4:-${GITHUB_API_URL:-https://api.github.com}}"
 
   if [ -z "${owner}" ] || [ -z "${app_id}" ] || [ -z "${app_private_key}" ]; then
-    echo "owner, app_id and app_private_key are required" >&2
+    echo "Not able to create a GitHub App token: owner, app_id and app_private_key are required" >&2
     return 1
   fi
 
@@ -149,17 +149,16 @@ github_app_token_for_owner_from_payloads() {
   local credential_prefix="${5:-GIT_GITHUB_APP}"
   local api_url="${6:-${GITHUB_API_URL:-https://api.github.com}}"
 
-  local app_id app_private_key
-  app_id=""
-  app_private_key=""
-  while IFS= read -r line; do
-    if [ -z "${app_id}" ]; then
-      app_id="${line}"
-    else
-      app_private_key="${line}"
-      break
-    fi
-  done < <(github_app_resolve_credentials_from_payloads "${json_variables}" "${json_secrets}" "${credential_scope}" "${credential_prefix}")
+  local resolved app_id app_private_key
+  resolved=$(github_app_resolve_credentials_from_payloads "${json_variables}" "${json_secrets}" "${credential_scope}" "${credential_prefix}") || return 1
+
+  app_id="${resolved%%$'\n'*}"
+  app_private_key="${resolved#*$'\n'}"
+
+  if [ -z "${app_id}" ] || [ -z "${app_private_key}" ] || [ "${app_private_key}" = "${resolved}" ]; then
+    echo "Failed to parse GitHub App credentials from payloads" >&2
+    return 1
+  fi
 
   github_app_token_for_owner "${owner}" "${app_id}" "${app_private_key}" "${api_url}"
 }
