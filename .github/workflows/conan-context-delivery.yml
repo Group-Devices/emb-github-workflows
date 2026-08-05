@@ -539,9 +539,9 @@ jobs:
             set -- "$@" -l conan-lockfile.json --lockfile-partial
           fi
           ${{ env.CONAN }} remote disable "${{ needs.extract-collectors.outputs.conan_release_remote_name}}"
-          ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer release --deployer-folder=to_conan
+          ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" $CONAN_CONTEXT_CONF_ARGS --deployer release --deployer-folder=to_conan
           if [ "${{needs.extract-collectors.outputs.deliverable}}" = 'true' ]; then
-            ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" --deployer delivery --deployer-folder=to_apt
+            ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" $CONAN_CONTEXT_CONF_ARGS --deployer delivery --deployer-folder=to_apt
           fi
           ${{ env.CONAN }} remote enable "${{ needs.extract-collectors.outputs.conan_release_remote_name}}"
 
@@ -785,7 +785,7 @@ jobs:
           if [ -f "conan-lockfile.json" ]; then
             set -- "$@" -l conan-lockfile.json --lockfile-partial
           fi
-          ${{ env.CONAN }} install "$@" -pr:h default --deployer docs --deployer-folder=to_docs
+          ${{ env.CONAN }} install "$@" -pr:h default $CONAN_CONTEXT_CONF_ARGS --deployer docs --deployer-folder=to_docs
 
       - name: Download package metadata for docs link pinning
         uses: actions/download-artifact@v8

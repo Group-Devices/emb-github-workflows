@@ -309,7 +309,7 @@ jobs:
           yq -r ".build.profiles[]" ./conan-context.yml > tmp_input
           while read -r profile ; do
               # shellcheck disable=SC2086
-              conan install ${requires} -pr:h "${profile}" --format=json > graph-${profile}.json
+              conan install ${requires} -pr:h "${profile}" $CONAN_CONTEXT_CONF_ARGS --format=json > graph-${profile}.json
               # Transform into pkglist
               # shellcheck disable=SC2086
               conan list --graph=graph-${profile}.json --format=json > pkglist-${profile}.json
@@ -387,4 +387,3 @@ jobs:
                 -H "Content-Type: multipart/form-data" --data-binary \
                 "@${deb}" "${NEXUS_URL}/repository/${{ needs.repositories-preparation.outputs.apt-repo-name }}/"
             done
-

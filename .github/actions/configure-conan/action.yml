@@ -75,13 +75,10 @@ runs:
           exit 1
         fi
         if [ "$context_conan_conf" != "{}" ]; then
-          echo "Apply Conan configuration from context"
-          context_conan_conf_entries=$(printf '%s\n' "$context_conan_conf" | jq -r 'to_entries[] | [.key, (.value | tostring)] | @tsv')
-          while IFS=$'\t' read -r key value; do
-            [ -n "$key" ] || continue
-            echo "Configure Conan setting $key"
-            printf '%s=%s\n' "$key" "$value" >> "$(conan config home)/global.conf"
-          done <<< "$context_conan_conf_entries"
+          context_conan_conf_args=$(printf '%s\n' "$context_conan_conf" | jq -r 'to_entries[] | "-c \(.key)=\(.value | tostring)"' | tr '\n' ' ')
+          echo "CONAN_CONTEXT_CONF_ARGS=${context_conan_conf_args}" >> "$GITHUB_ENV"
+        else
+          echo "CONAN_CONTEXT_CONF_ARGS=" >> "$GITHUB_ENV"
         fi
 
         echo "Start conan remotes configuration"
