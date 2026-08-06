@@ -14,7 +14,7 @@ runs:
   using: composite
   steps:
     - name: Upload lockfile
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: lock-${{ inputs.profile }}
         path: conan-lockfile.json
@@ -39,7 +39,7 @@ runs:
 
     - if: ${{ inputs.cache-mode != 'none' }}
       name: Upload Conan cache
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: cache-${{ inputs.profile }}.tgz
         path: cache-${{ inputs.profile }}.tgz

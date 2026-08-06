@@ -212,3 +212,4 @@ runs:
       with:
         name: conan-context
         path: ${{ env.CONAN_CONTEXT_PATH }}
+        retention-days: 2
