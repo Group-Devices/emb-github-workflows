@@ -75,7 +75,7 @@ github_app_token_for_owner() {
   installation_id=$(github_app_get_installation_id "${owner}" "${jwt}" "${api_url}")
 
   if [ -z "${installation_id}" ]; then
-    echo "No GitHub App installation found for owner ${owner}" >&2
+    echo "No GitHub App installation found for owner ${owner}, please contact your administrator." >&2
     return 1
   fi
 
@@ -85,7 +85,7 @@ github_app_token_for_owner() {
     "${api_url}/app/installations/${installation_id}/access_tokens" | jq -r '.token')
 
   if [ -z "${token}" ] || [ "${token}" = "null" ]; then
-    echo "Failed to generate GitHub App token for owner ${owner}" >&2
+    echo "Failed to generate GitHub App token for owner ${owner}, please contact your administrator." >&2
     return 1
   fi
 
@@ -130,9 +130,9 @@ github_app_resolve_credentials_from_payloads() {
 
   if [ -z "${app_id}" ] || [ -z "${app_private_key}" ]; then
     if [ "${credential_scope}" = "default" ]; then
-      echo "Missing GitHub App credentials. Configure variable ${prefix_upper}_ID and secret ${prefix_upper}_PRIVATE_KEY." >&2
+      echo "Missing GitHub App credentials. Ask your administrator to configure variable ${prefix_upper}_ID and secret ${prefix_upper}_PRIVATE_KEY." >&2
     else
-      echo "Missing scoped GitHub App credentials for '${credential_scope}'. Configure variable ${prefix_upper}_ID_${scope_upper} and secret ${prefix_upper}_PRIVATE_KEY_${scope_upper}, or default ${prefix_upper}_ID/${prefix_upper}_PRIVATE_KEY." >&2
+      echo "Missing scoped GitHub App credentials for '${credential_scope}'. Ask your administrator to configure variable ${prefix_upper}_ID_${scope_upper} and secret ${prefix_upper}_PRIVATE_KEY_${scope_upper}, or default ${prefix_upper}_ID/${prefix_upper}_PRIVATE_KEY." >&2
     fi
     return 1
   fi

@@ -22,6 +22,10 @@ inputs:
     description: GitHub owner used to resolve the authentication token.
     required: false
     default: ''
+  json-variables:
+    description: Serialized GitHub variables object.
+    required: false
+    default: ''
   json-secrets:
     description: Serialized GitHub secrets object.
     required: false
@@ -85,6 +89,7 @@ runs:
       uses: $/.github/actions/gh-auth-owner
       with:
         owner: ${{ steps.resolve-source.outputs.source-owner }}
+        json-variables: ${{ inputs.json-variables }}
         json-secrets: ${{ inputs.json-secrets }}
 
     - id: restore-lock

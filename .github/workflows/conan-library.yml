@@ -189,6 +189,7 @@ jobs:
       - name: Configure Conan
         uses: $/.github/actions/configure-conan
         with:
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
 
@@ -397,6 +398,7 @@ jobs:
         uses: $/.github/actions/restore-conan-build-state
         with:
           source-build-context: ${{ inputs.source-build-context != '' && inputs.source-build-context || inputs.force-build }}
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
           profile: ${{ matrix.profile }}
           cache-mode: ${{ env.CACHE_MODE }}

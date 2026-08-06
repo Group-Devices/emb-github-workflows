@@ -517,6 +517,7 @@ jobs:
           source-repo: ${{ inputs.source_repo }}
           source-run-id: ${{ inputs.source_run_id }}
           source-owner: ${{ inputs.source_owner }}
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
           profile: ${{ matrix.profile }}
           cache-mode: ${{ env.CACHE_MODE }}
@@ -795,6 +796,7 @@ jobs:
           source-repo: ${{ inputs.source_repo }}
           source-run-id: ${{ inputs.source_run_id }}
           source-owner: ${{ inputs.source_owner }}
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
           profile: default
           cache-mode: ${{ env.CACHE_MODE }}
@@ -863,8 +865,9 @@ jobs:
         uses: $/.github/actions/gh-auth-owner
         with:
           owner: ${{ github.repository_owner }}
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
-          token-prefix: GIT_TOKEN_RELEASE
+          app-credential-prefix: GIT_TOKEN_RELEASE
 
       - name: Pull docs folder
         run: |

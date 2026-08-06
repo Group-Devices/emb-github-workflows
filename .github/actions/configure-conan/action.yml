@@ -26,7 +26,7 @@ runs:
       run: |
         repo=$(basename ${{ github.repository }})
         git config --global --add safe.directory "/__w/${repo}/${repo}"
-    - name: Setup .NET
+    - name: Setup Conan
       shell: bash
       run: |
         all_variables='${{ inputs.json-variables }}'
