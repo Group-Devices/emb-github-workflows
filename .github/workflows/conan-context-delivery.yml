@@ -469,25 +469,6 @@ jobs:
           app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
 
-      - name: Authenticate for workflow helpers repository
-        id: auth-workflow-helpers
-        uses: $/.github/actions/gh-auth-owner
-        with:
-          owner: Group-Devices
-          json-variables: ${{ toJson(vars) }}
-          json-secrets: ${{ toJson(secrets) }}
-          app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
-
-      - name: Checkout workflow helpers
-        uses: actions/checkout@v6
-        with:
-          repository: Group-Devices/emb-github-workflows
-          ref: main
-          token: ${{ steps.auth-workflow-helpers.outputs.token }}
-          path: .workflow_helpers
-          sparse-checkout: |
-            .github/scripts
-
       - name: Resolve Conan cache mode
         run: |
           context_cache_mode=$(yq e '.build.cache_mode // ""' "${CONAN_CONTEXT_PATH}")
@@ -569,12 +550,17 @@ jobs:
           fi
           ${{ env.CONAN }} remote enable "${{ needs.extract-collectors.outputs.conan_release_remote_name}}"
 
+      - name: Resolve GitHub App token script path
+        id: resolve-github-app-token-script
+        uses: $/.github/actions/gh-auth-owner
+
       - name: Upload to conan
         id: upload
         env:
+          ALL_VARS_JSON: ${{ toJSON(vars) }}
           ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
         run: |
-          source .workflow_helpers/.github/scripts/github_app_token.sh
+          source "${{ steps.resolve-github-app-token-script.outputs.script-path }}"
 
           DELIVERY_NAME=${{ needs.preflight-checks.outputs.delivery-name }}
           echo "Start upload release packages"
@@ -596,7 +582,7 @@ jobs:
             if [ "${AUTHENTICATED_OWNER}" != "${OWNER}" ]; then
               echo "Generating GitHub App token for org ${OWNER}"
               APP_CREDENTIAL_PREFIX='${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}'
-              OWNER_GIT_TOKEN=$(github_app_token_for_owner_from_payloads "${OWNER}" '${{ toJson(vars) }}' '${{ toJson(secrets) }}' "release" "${APP_CREDENTIAL_PREFIX}")
+              OWNER_GIT_TOKEN=$(github_app_token_for_owner_from_payloads "${OWNER}" "${ALL_VARS_JSON}" "${ALL_SECRETS_JSON}" "release" "${APP_CREDENTIAL_PREFIX}") 
               if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
                 echo "Unable to generate GitHub App token for org ${OWNER}"
                 exit 1

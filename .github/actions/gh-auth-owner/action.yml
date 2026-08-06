@@ -4,14 +4,16 @@ description: Generate an owner-scoped GitHub App installation token and authenti
 inputs:
   owner:
     description: GitHub owner or organization name.
-    required: true
+    required: false
+    default: ''
   json-variables:
     description: Serialized GitHub variables object.
     required: false
     default: '{}'
   json-secrets:
     description: Serialized GitHub secrets object.
-    required: true
+    required: false
+    default: '{}'
   app-credential-scope:
     description: Credential scope used to resolve GitHub App secrets (default, release, etc.).
     required: false
@@ -22,6 +24,9 @@ inputs:
     default: GIT_GITHUB_APP
 
 outputs:
+  script-path:
+    description: Absolute path to github_app_token.sh from this action bundle.
+    value: ${{ steps.resolve-script-path.outputs.script-path }}
   token:
     description: Generated owner-scoped GitHub App installation token.
     value: ${{ steps.generate-token.outputs.token }}
@@ -29,8 +34,20 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Resolve GitHub App token script path
+      id: resolve-script-path
+      shell: bash
+      run: |
+        script_path="${GITHUB_ACTION_PATH}/../../scripts/github_app_token.sh"
+        if [ ! -f "${script_path}" ]; then
+          echo "Could not find github_app_token.sh at ${script_path}"
+          exit 1
+        fi
+        echo "script-path=${script_path}" >> "$GITHUB_OUTPUT"
+
     - name: Generate GitHub App token for owner
       id: generate-token
+      if: inputs.owner != ''
       shell: bash
       run: |
         owner='${{ inputs.owner }}'
@@ -44,7 +61,7 @@ runs:
           exit 1
         fi
 
-        source "${GITHUB_ACTION_PATH}/../../scripts/github_app_token.sh"
+        source "${{ steps.resolve-script-path.outputs.script-path }}"
         token=$(github_app_token_for_owner_from_payloads "${owner}" "${all_variables}" "${all_secrets}" "${credential_scope}" "${credential_prefix}")
 
         if [ -z "${token}" ]; then
@@ -55,7 +72,8 @@ runs:
         echo "::add-mask::${token}"
         echo "token=${token}" >> "$GITHUB_OUTPUT"
 
-    - name: Authenticate gh for owner
+    - name: Authenticate on GitHub CLI
+      if: inputs.owner != ''
       shell: bash
       run: |
         token='${{ steps.generate-token.outputs.token }}'

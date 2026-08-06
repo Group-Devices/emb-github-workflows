@@ -361,25 +361,6 @@ jobs:
               exit 1
               ;;
           esac
-      - name: Authenticate for workflow helpers repository
-        id: auth-workflow-helpers
-        uses: $/.github/actions/gh-auth-owner
-        with:
-          owner: Group-Devices
-          json-variables: ${{ toJson(vars) }}
-          json-secrets: ${{ toJson(secrets) }}
-          app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
-
-      - name: Checkout workflow helpers
-        uses: actions/checkout@v6
-        with:
-          repository: Group-Devices/emb-github-workflows
-          ref: main
-          token: ${{ steps.auth-workflow-helpers.outputs.token }}
-          path: .workflow_helpers
-          sparse-checkout: |
-            .github/scripts
-
       - name: Export GitHub context to environment
         run: |
           {
@@ -404,13 +385,19 @@ jobs:
           cache-mode: ${{ env.CACHE_MODE }}
           create-lockfile-command: conan lock create . --profile=${{ matrix.profile }} --lockfile-out=conan-lockfile.json
 
+      - name: Resolve GitHub App token script path
+        id: resolve-github-app-token-script
+        uses: $/.github/actions/gh-auth-owner
+
       - name: Conan create
         shell: bash
         env:
+          ALL_VARS_JSON: ${{ toJSON(vars) }}
           ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
         run: |
           set -o pipefail
-          source .workflow_helpers/.github/scripts/github_app_token.sh
+
+          source "${{ steps.resolve-github-app-token-script.outputs.script-path }}"
 
           upload=$(yq e '.upload' "${CONAN_CONTEXT_PATH}")
           if [ -z "${upload}" ] || [ "null" = "${upload}" ]; then
@@ -437,7 +424,7 @@ jobs:
               context=$(yq e '.bundle' "${CONAN_CONTEXT_PATH}")
               if [ "${bundle}" !=  "${context}" ]; then
                 echo "need to rebuild a package ${ref} from another context ${bundle}"  
-                echo "Looks like ${bundle is broken}"
+                echo "Looks like ${bundle} is broken"
                 exit 1
               fi
               OWNER="${url#*//}"
@@ -445,7 +432,7 @@ jobs:
               OWNER="${OWNER%/*}"
               echo "url $url sha $sha OWNER $OWNER"
               APP_CREDENTIAL_PREFIX='${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}'
-              OWNER_GIT_TOKEN=$(github_app_token_for_owner_from_payloads "${OWNER}" '${{ toJson(vars) }}' '${{ toJson(secrets) }}' "default" "${APP_CREDENTIAL_PREFIX}")
+              OWNER_GIT_TOKEN=$(github_app_token_for_owner_from_payloads "${OWNER}" "${ALL_VARS_JSON}" "${ALL_SECRETS_JSON}" "default" "${APP_CREDENTIAL_PREFIX}")
               if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
                 echo "Unable to generate GitHub App token for owner ${OWNER}"
                 exit 1
