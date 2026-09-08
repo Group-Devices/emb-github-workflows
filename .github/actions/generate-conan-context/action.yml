@@ -18,6 +18,9 @@ outputs:
   collectors-list:
     description: "The list of collectors"
     value: ${{ steps.generate-collectors-list.outputs.list }}
+  collector-topology:
+    description: "Optional collector topology"
+    value: ${{ steps.generate-collector-topology.outputs.map }}
 
 runs:
   using: "composite"
@@ -197,6 +200,22 @@ runs:
           echo "list=$(yq -r ".${FIELD}" "${CONAN_CONTEXT_PATH}" -o=json | jq -c)" >> "$GITHUB_OUTPUT"
         else
           echo "File: ${CONAN_CONTEXT_PATH} - Field '$FIELD' does not exist or is not an array."
+          exit 1
+        fi
+
+    - name: 'Output the collector topology'
+      id: generate-collector-topology
+      shell: bash
+      run: |
+        FIELD="build.collector_topology"
+        result=$(yq eval ".${FIELD} | type" "${CONAN_CONTEXT_PATH}")
+
+        if [ "$result" = "!!map" ]; then
+          echo "map=$(yq -r ".${FIELD}" "${CONAN_CONTEXT_PATH}" -o=json | jq -c)" >> "$GITHUB_OUTPUT"
+        elif [ "$result" = "!!null" ]; then
+          echo "map={}" >> "$GITHUB_OUTPUT"
+        else
+          echo "File: ${CONAN_CONTEXT_PATH} - Field '$FIELD' must be a map when defined."
           exit 1
         fi
 

@@ -83,6 +83,7 @@ jobs:
     outputs:
       build-profile-list: ${{ steps.generate-conan-context.outputs.build-profile-list }}
       collectors-list: ${{ steps.generate-conan-context.outputs.collectors-list }}
+      collector-topology: ${{ steps.generate-conan-context.outputs.collector-topology }}
     steps:
       - uses: actions/checkout@v6
       - uses: $/.github/actions/generate-conan-context
@@ -479,17 +480,71 @@ jobs:
     if: inputs.build-missing == true && needs.collector-relevance.outputs.should-build != 'true'
     steps:
       - run: echo "Changed package is not present in the collector dependency graph for any configured profile. Skipping collector rebuild and context delivery."
-          
-  rebuild-collectors:
+
+  resolve-rebuild-collectors:
     runs-on: ubuntu-latest
-    if: always() && inputs.run-as-fast-build == false && inputs.enable-rebuild-collectors && needs.build-and-upload.result == 'success'
     needs:
       - generate-conan-context
       - build-and-upload
+    if: always() && inputs.run-as-fast-build == false && inputs.enable-rebuild-collectors && needs.build-and-upload.result == 'success'
+    outputs:
+      collectors-list: ${{ steps.resolve.outputs.collectors-list }}
+    steps:
+      - id: resolve
+        shell: bash
+        env:
+          COLLECTORS: ${{ needs.generate-conan-context.outputs.collectors-list }}
+          COLLECTOR_TOPOLOGY: ${{ needs.generate-conan-context.outputs.collector-topology }}
+          BUILD_MISSING: ${{ inputs.build-missing }}
+          CURRENT_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          if [ "$COLLECTOR_TOPOLOGY" = "{}" ] || [ -z "$COLLECTOR_TOPOLOGY" ]; then
+            echo "No collector topology configured: keeping existing behaviour"
+            echo "collectors-list=$COLLECTORS" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$BUILD_MISSING" != "true" ]; then
+            # Normal package build: dispatch child collectors only.
+            selected=$(echo "$COLLECTOR_TOPOLOGY" | jq -c 'keys')
+
+            echo "Normal build: dispatching child collectors: $selected"
+            echo "collectors-list=$selected" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          parent=$(echo "$COLLECTOR_TOPOLOGY" | jq -r \
+            --arg current "$CURRENT_REPOSITORY" \
+            '.[$current] // empty')
+
+          if [ -n "$parent" ]; then
+            selected=$(jq -cn --arg parent "$parent" '[$parent]')
+            echo "Collector cascade: $CURRENT_REPOSITORY -> $parent"
+          else
+            selected='[]'
+            echo "Collector cascade complete: $CURRENT_REPOSITORY has no parent"
+          fi
+
+          echo "collectors-list=$selected" >> "$GITHUB_OUTPUT"
+
+  rebuild-collectors:
+    runs-on: ubuntu-latest
+    if: >-
+      always() &&
+      inputs.run-as-fast-build == false &&
+      inputs.enable-rebuild-collectors &&
+      needs.build-and-upload.result == 'success' &&
+      needs.resolve-rebuild-collectors.outputs.collectors-list != '[]'
+    needs:
+      - generate-conan-context
+      - build-and-upload
+      - resolve-rebuild-collectors
     strategy:
       fail-fast: false
       matrix:
-        collector: ${{ fromJson(needs.generate-conan-context.outputs.collectors-list) }}
+        collector: ${{ fromJson(needs.resolve-rebuild-collectors.outputs.collectors-list) }}
     env:
       TARGET_WORKFLOW: "rebuild.yml"
     steps:
