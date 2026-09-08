@@ -592,6 +592,7 @@ jobs:
         uses: $/.github/actions/build-source-build-context
         with:
           append-key: package_context
+          incoming-context: ${{ inputs.source-build-context }}
 
       - name: Dispatch workflow of ${{ matrix.collector }} on ${{ github.ref_name }}
         run: |

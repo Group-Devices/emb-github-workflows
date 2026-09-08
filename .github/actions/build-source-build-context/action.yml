@@ -51,5 +51,5 @@ runs:
           BASE_CONTEXT='{}'
         fi
 
-        CONTEXT=$(printf '%s' "$BASE_CONTEXT" | jq -c --arg key "$APPEND_KEY" --argjson current "$CURRENT_CONTEXT" '. + {($key): $current}')
+        CONTEXT=$(printf '%s' "$BASE_CONTEXT" | jq -c --arg key "$APPEND_KEY" --argjson current "$CURRENT_CONTEXT" 'if has($key) then . else . + {($key): $current} end')
         echo "context=$CONTEXT" >> "$GITHUB_OUTPUT"
