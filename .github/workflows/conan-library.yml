@@ -592,12 +592,38 @@ jobs:
         uses: $/.github/actions/build-source-build-context
         with:
           append-key: package_context
-          incoming-context: ${{ inputs.source-build-context }}
+
+      - id: cascade-package-context
+        name: Resolve package source context for collector topology
+        if: needs.generate-conan-context.outputs.collector-topology != '{}'
+        shell: bash
+        env:
+          PACKAGE_CONTEXT: ${{ steps.package-context.outputs.context }}
+          SOURCE_BUILD_CONTEXT: ${{ inputs.source-build-context }}
+        run: |
+          if [ -n "$SOURCE_BUILD_CONTEXT" ]; then
+            CONTEXT="$SOURCE_BUILD_CONTEXT"
+            echo "Preserving source package context from collector cascade"
+          else
+            CONTEXT="$PACKAGE_CONTEXT"
+            echo "Starting collector topology from current package"
+          fi
+
+          echo "context=$CONTEXT" >> "$GITHUB_OUTPUT"
 
       - name: Dispatch workflow of ${{ matrix.collector }} on ${{ github.ref_name }}
+        env:
+          PACKAGE_CONTEXT: ${{ steps.package-context.outputs.context }}
+          CASCADE_CONTEXT: ${{ steps.cascade-package-context.outputs.context }}
         run: |
           SHORT_SHA=${GITHUB_SHA::7}
-          JSON='${{ steps.package-context.outputs.context }}'
+
+          if [ -n "$CASCADE_CONTEXT" ]; then
+            JSON="$CASCADE_CONTEXT"
+          else
+            JSON="$PACKAGE_CONTEXT"
+          fi
+
           echo "context pass $JSON"
           echo "command gh workflow run ${TARGET_WORKFLOW} --repo ${{ matrix.collector }} --ref ${{ github.ref_name }} --field source_build_context=$JSON --field built_package=$JSON"
           gh workflow run "${TARGET_WORKFLOW}" \
