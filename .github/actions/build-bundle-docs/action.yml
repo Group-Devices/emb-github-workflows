@@ -1,10 +1,40 @@
 name: Build bundle docs site
 description: Generate the static bundle documentation site from packaged docs.
 
+inputs:
+  command:
+    description: "Which docs helper command to run: build-site or build-versions-index"
+    required: false
+    default: build-site
+  versions-root:
+    description: "Root directory containing versioned docs folders"
+    required: false
+    default: .
+  current-version:
+    description: "Current docs version folder name"
+    required: false
+    default: ""
+
 runs:
   using: composite
   steps:
-    - name: Build bundle docs site
+    - name: Run docs helper command
       shell: bash
       run: |
-        python3 "${{ github.action_path }}/build_bundle_docs.py"
+        case "${{ inputs.command }}" in
+          build-site)
+            python3 "${GITHUB_ACTION_PATH}/build_bundle_docs.py"
+            ;;
+          build-versions-index)
+            if [ -z "${{ inputs.current-version }}" ]; then
+              echo "Input 'current-version' is required when command is 'build-versions-index'"
+              exit 1
+            fi
+            python3 "${GITHUB_ACTION_PATH}/build_versions_index.py" "${{ inputs.versions-root }}" "${{ inputs.current-version }}"
+            ;;
+          *)
+            echo "Unsupported command: ${{ inputs.command }}"
+            echo "Expected one of: build-site, build-versions-index"
+            exit 1
+            ;;
+        esac

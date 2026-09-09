@@ -122,11 +122,20 @@ runs:
       shell: bash
       run: |
         build_boards_array=$(python3 extract-conanfile-field.py build_boards)
+        exclude_boards_array=$(python3 extract-conanfile-field.py exclude_boards)
         FIELD=".build_boards"
-        result=$(echo $build_boards_array | yq eval ". | type")
+        result=$(echo "$build_boards_array" | yq eval ". | type" 2>/dev/null || true)
         if [ "$result" = "!!seq" ]; then
-          jsonbord=$(echo $build_boards_array | yq -r "." -o=json | jq -c)
-          if [ -n "$jsonbord" ] && echo $jsonbord | jq -e '.[] | select(. == "PC")' > /dev/null; then
+          jsonbord=$(echo "$build_boards_array" | yq -r "." -o=json | jq -c)
+          excluded_pc=false
+          exclude_result=$(echo "$exclude_boards_array" | yq eval ". | type" 2>/dev/null || true)
+          if [ "$exclude_result" = "!!seq" ]; then
+            exclude_json=$(echo "$exclude_boards_array" | yq -r "." -o=json | jq -c)
+            if [ -n "$exclude_json" ] && echo "$exclude_json" | jq -e '.[] | ascii_upcase | select(. == "PC")' > /dev/null; then
+              excluded_pc=true
+            fi
+          fi
+          if [ -n "$jsonbord" ] && echo "$jsonbord" | jq -e '.[] | ascii_upcase | select(. == "PC")' > /dev/null && [ "$excluded_pc" != "true" ]; then
             echo "PC is present in build_boards"
             echo "APPEND_DEFAULT_PROFILE=true" >> "$GITHUB_ENV"
           else
@@ -144,10 +153,34 @@ runs:
         FIELD="build.profiles"
         result=$(yq eval ".${FIELD} | type" "${CONAN_CONTEXT_PATH}")
         if [ "$result" = "!!seq" ]; then
+          profiles=$(yq -r ".${FIELD}" "${CONAN_CONTEXT_PATH}" -o=json | jq -c)
+          filtered="$profiles"
+
+          build_boards_array=$(python3 extract-conanfile-field.py build_boards)
+          build_boards_type=$(echo "$build_boards_array" | yq eval ". | type" 2>/dev/null || true)
+          if [ "$build_boards_type" = "!!seq" ]; then
+            build_boards_json=$(echo "$build_boards_array" | yq -r "." -o=json | jq -c)
+            filtered=$(jq -cn \
+              --argjson profiles "$filtered" \
+              --argjson boards "$build_boards_json" \
+              '$profiles | map(select((. | ascii_upcase) as $profile | ($boards | map(ascii_upcase) | index($profile)) != null))')
+          fi
+
+          exclude_boards_array=$(python3 extract-conanfile-field.py exclude_boards)
+          exclude_boards_type=$(echo "$exclude_boards_array" | yq eval ". | type" 2>/dev/null || true)
+          if [ "$exclude_boards_type" = "!!seq" ]; then
+            exclude_boards_json=$(echo "$exclude_boards_array" | yq -r "." -o=json | jq -c)
+            filtered=$(jq -cn \
+              --argjson profiles "$filtered" \
+              --argjson boards "$exclude_boards_json" \
+              '$profiles | map(select((. | ascii_upcase) as $profile | ($boards | map(ascii_upcase) | index($profile)) == null))')
+          fi
+
           if [ -n "$APPEND_DEFAULT_PROFILE" ] && [ "$APPEND_DEFAULT_PROFILE" = "true" ]; then
-            echo "list=$(yq -r ".${FIELD}" "${CONAN_CONTEXT_PATH}" -o=json | jq -c "if index(\"default\") == null then . + [\"default\"] else . end")" >> "$GITHUB_OUTPUT"
+            filtered=$(echo "$filtered" | jq -c 'if index("default") == null then . + ["default"] else . end')
+            echo "list=$filtered" >> "$GITHUB_OUTPUT"
           else
-            echo "list=$(yq -r ".${FIELD}" "${CONAN_CONTEXT_PATH}" -o=json | jq -c)" >> "$GITHUB_OUTPUT"
+            echo "list=$filtered" >> "$GITHUB_OUTPUT"
           fi
         else
           echo "File: ${CONAN_CONTEXT_PATH} - Field '$FIELD' does not exist or is not an array."

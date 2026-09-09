@@ -262,7 +262,7 @@ jobs:
           git config --global --add safe.directory "/__w/${repo}/${repo}"
 
       - name: Configure conan
-        uses: Group-Devices/emb-github-workflows/.github/actions/configure-conan@main
+        uses: $/.github/actions/configure-conan
         with:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
@@ -308,8 +308,8 @@ jobs:
           echo "{}" > pkglist.json
           yq -r ".build.profiles[]" ./conan-context.yml > tmp_input
           while read -r profile ; do
-              # shellcheck disable=SC2086
-              conan install ${requires} -pr:h "${profile}" --format=json > graph-${profile}.json
+              # shellcheck disable=SC2086 # Split requires and the generated -c options.
+              conan install ${requires} -pr:h "${profile}" $CONAN_CONTEXT_CONF_ARGS --format=json > graph-${profile}.json
               # Transform into pkglist
               # shellcheck disable=SC2086
               conan list --graph=graph-${profile}.json --format=json > pkglist-${profile}.json
@@ -387,4 +387,3 @@ jobs:
                 -H "Content-Type: multipart/form-data" --data-binary \
                 "@${deb}" "${NEXUS_URL}/repository/${{ needs.repositories-preparation.outputs.apt-repo-name }}/"
             done
-
