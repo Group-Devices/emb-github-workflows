@@ -29,7 +29,12 @@ on:
         type: boolean
         default: false
       force-build:  
-        description: 'forced build package'
+        description: 'Legacy source build context payload'
+        required: false
+        type: string
+        default: ''
+      source-build-context:
+        description: 'Source build context payload'
         required: false
         type: string
         default: ''
@@ -53,13 +58,10 @@ on:
         required: false
         type: boolean
         default: false
-      use_cache:
-        required: false
-        type: boolean
-        default: false
 
 
 env:
+  ALL_SECRETS: ${{ toJson(secrets) }}
   SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
   SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
   CONAN_CONTEXT_PATH: ".conan-context/conan-context.yml"
@@ -68,7 +70,6 @@ env:
   RUN_ATTEMPT: ${{ github.run_attempt }}
   REPO: ${{ github.repository }}
   PACKAGE_NAME: ${{ github.event.repository.name }}
-  ALL_SECRETS: '${{ tojson(secrets) }}'
 
 jobs:
   generate-conan-context:
@@ -84,7 +85,7 @@ jobs:
       collectors-list: ${{ steps.generate-conan-context.outputs.collectors-list }}
     steps:
       - uses: actions/checkout@v6
-      - uses: Group-Devices/emb-github-workflows/.github/actions/generate-conan-context@main
+      - uses: $/.github/actions/generate-conan-context
         id: generate-conan-context
         with:
           json-secrets: ${{ toJson(secrets) }}
@@ -107,7 +108,7 @@ jobs:
           name: conan-context
           path: .conan-context
       - name: Configure Conan
-        uses: Group-Devices/emb-github-workflows/.github/actions/configure-conan@main
+        uses: $/.github/actions/configure-conan
         with:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
@@ -118,6 +119,11 @@ jobs:
         run: |
           cat coverage/Testing/Temporary/LastTest*
 
+      - name: Setup Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: 3.8
+          
       - name: Publish Test Results
         uses: EnricoMi/publish-unit-test-result-action/linux@v2
         if: ${{ !cancelled() && hashFiles('coverage/junit-results.xml') != '' }}
@@ -143,10 +149,146 @@ jobs:
     if: inputs.run-as-fast-build == false && inputs.enable-quality-analysis
     steps:
       - run: echo "Will run a SonarQube analysis"
+  collector-relevance:
+    runs-on: eks-runner-linux-x64-medium
+    if: always()
+    needs:
+      - generate-conan-context
+    outputs:
+      should-build: ${{ steps.resolve.outputs.should-build }}
+      relevant-profiles: ${{ steps.resolve.outputs.relevant-profiles }}
+    container:
+      image: repository.nexus.vixtechnology.com/docker-internal-group/aurora-compiler:main
+      credentials:
+        username: ${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
+        password: ${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare Conan context
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.conan-context }}" ]; then
+            mkdir -p .conan-context
+            printf '%s\n' "${{ inputs.conan-context }}" > .conan-context/conan-context.yml
+          else
+            mkdir -p .conan-context
+          fi
+
+      - name: Download Conan context artifact
+        if: inputs.conan-context == '' && inputs.run-as-fast-build == false
+        uses: actions/download-artifact@v8
+        with:
+          name: conan-context
+          path: .conan-context
+
+      - name: Configure Conan
+        uses: $/.github/actions/configure-conan
+        with:
+          json-secrets: ${{ toJson(secrets) }}
+          conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
+
+      - id: resolve
+        shell: bash
+        env:
+          REQUESTED_PROFILES: ${{ inputs.conan-profiles != '' && inputs.conan-profiles || needs.generate-conan-context.outputs.build-profile-list }}
+          SOURCE_BUILD_CONTEXT: ${{ inputs.source-build-context != '' && inputs.source-build-context || inputs.force-build }}
+          FALLBACK_PACKAGE_NAME: ${{ env.PACKAGE_NAME }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${REQUESTED_PROFILES}" ] || [ "${REQUESTED_PROFILES}" = "null" ]; then
+            echo "Unable to determine build profiles"
+            exit 1
+          fi
+
+          SHOULD_BUILD=false
+          RELEVANT_PROFILES=()
+          BUILD_FROM_SOURCE_CONTEXT=false
+
+          PKG_REPO=""
+          PKG_NAME=""
+
+          if [ "${{ inputs.build-missing }}" = "true" ] && [ -n "${SOURCE_BUILD_CONTEXT}" ]; then
+            PKG_REPO=$(echo "$SOURCE_BUILD_CONTEXT" | jq -r '.package_context.repo // empty')
+            PKG_NAME=$(echo "$SOURCE_BUILD_CONTEXT" | jq -r '.package_context.name // empty')
+
+            if [ -z "$PKG_NAME" ] && [ -n "$PKG_REPO" ]; then
+              PKG_NAME=${PKG_REPO#*/}
+            fi
+
+            if [ -z "$PKG_NAME" ]; then
+              echo "Unable to determine package name from source_build_context"
+              exit 1
+            fi
+
+            BUILD_FROM_SOURCE_CONTEXT=true
+          else
+            PKG_NAME=$(conan inspect . --format=json | jq -r '.name // empty')
+            if [ -z "$PKG_NAME" ] || [ "$PKG_NAME" = "null" ]; then
+              PKG_NAME="${FALLBACK_PACKAGE_NAME}"
+            fi
+
+            if [ -z "$PKG_NAME" ] || [ "$PKG_NAME" = "null" ]; then
+              echo "Unable to determine package name for direct build"
+              exit 1
+            fi
+          fi
+
+          while IFS= read -r PROFILE; do
+            [ -n "$PROFILE" ] || continue
+
+            if [ "$BUILD_FROM_SOURCE_CONTEXT" = "true" ]; then
+              # shellcheck disable=SC2086 # Split the generated sequence of -c options.
+              conan graph info . \
+                -pr:h "$PROFILE" \
+                $CONAN_CONTEXT_CONF_ARGS \
+                --format=json \
+                > "graph-${PROFILE}.json"
+
+              if jq -e --arg pkg "$PKG_NAME" '
+                  [.graph.nodes // {} | to_entries[] | .value.ref // ""] | any(startswith($pkg + "/"))
+                ' "graph-${PROFILE}.json" >/dev/null; then
+                SHOULD_BUILD=true
+                RELEVANT_PROFILES+=("\"$PROFILE\"")
+              fi
+              continue
+            fi
+
+            conan profile show -pr:h "$PROFILE" --format=json > "profile-${PROFILE}.json"
+            replacement=$(
+              jq -r --arg pkg "$PKG_NAME" '
+                .host.replace_requires // {}
+                | to_entries[]
+                | select((.key | split("/")[0]) == $pkg)
+                | .value
+              ' "profile-${PROFILE}.json" | head -n1
+            )
+
+            if [ -n "$replacement" ] && [ "$replacement" != "null" ]; then
+              replacement_name=${replacement%%/*}
+              if [ "$replacement_name" != "$PKG_NAME" ]; then
+                echo "Skipping profile ${PROFILE}: ${PKG_NAME} is replaced by ${replacement_name}"
+                continue
+              fi
+            fi
+
+            SHOULD_BUILD=true
+            RELEVANT_PROFILES+=("\"$PROFILE\"")
+          done < <(echo "$REQUESTED_PROFILES" | jq -r '.[]')
+
+          if [ "$SHOULD_BUILD" = "true" ]; then
+            echo "should-build=true" >> "$GITHUB_OUTPUT"
+            echo "relevant-profiles=[$(IFS=,; echo "${RELEVANT_PROFILES[*]}")]" >> "$GITHUB_OUTPUT"
+          else
+            echo "should-build=false" >> "$GITHUB_OUTPUT"
+            echo "relevant-profiles=[]" >> "$GITHUB_OUTPUT"
+          fi
   build-and-upload:
     runs-on: ${{ startsWith(github.event.repository.name, 'qt') && 'eks-runner-linux-x64-large' || 'eks-runner-linux-x64-medium' }}
     if: >-
-      always() && (
+      always() &&
+      needs.collector-relevance.outputs.should-build == 'true' && (
         inputs.conan-profiles != '' ||
         !inputs.run-unit-tests ||
         needs.unit-tests.result == 'success'
@@ -154,10 +296,11 @@ jobs:
     needs:
       - generate-conan-context
       - unit-tests
+      - collector-relevance
     strategy:
       fail-fast: false
       matrix:
-        profile: ${{ inputs.conan-profiles != '' && fromJson(inputs.conan-profiles) || fromJson(needs.generate-conan-context.outputs.build-profile-list) }}
+        profile: ${{ fromJson(needs.collector-relevance.outputs.relevant-profiles) }}
     container:
       image: repository.nexus.vixtechnology.com/docker-internal-group/${{ matrix.profile }}-compiler:main
       credentials:
@@ -186,10 +329,31 @@ jobs:
           name: conan-context
           path: .conan-context
       - name: Configure Conan
-        uses: Group-Devices/emb-github-workflows/.github/actions/configure-conan@main
+        uses: $/.github/actions/configure-conan
         with:
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
+
+      - name: Resolve Conan cache mode
+        run: |
+          context_cache_mode=$(yq e '.build.cache_mode // ""' "${CONAN_CONTEXT_PATH}")
+          if [ -z "$context_cache_mode" ] || [ "$context_cache_mode" = "null" ]; then
+            context_use_cache=$(yq e '.build.use_cache // .use_cache // false' "${CONAN_CONTEXT_PATH}")
+            if [ "$context_use_cache" = 'true' ]; then
+              context_cache_mode=recipes
+            else
+              context_cache_mode=none
+            fi
+          fi
+          case "$context_cache_mode" in
+            none|recipes|full)
+              echo "CACHE_MODE=$context_cache_mode" >> "$GITHUB_ENV"
+              ;;
+            *)
+              echo "Unsupported build.cache_mode: $context_cache_mode"
+              exit 1
+              ;;
+          esac
 
       - name: Export GitHub context to environment
         run: |
@@ -205,43 +369,14 @@ jobs:
             echo "WORKFLOW=$GITHUB_WORKFLOW"
           } >> "$GITHUB_ENV"
 
-      - name: Parse incoming source_context
-        run: |
-            echo '${{ inputs.force-build }}' > incoming.json
-            jq . incoming.json 
-            SOURCE_REPO=$(echo '${{ inputs.force-build }}' | jq -r '.package_context.repo')
-            SOURCE_RUN_ID=$(echo '${{ inputs.force-build }}' | jq -r '.package_context.run_id')
-            SOURCE_OWNER=$(echo '${{ inputs.force-build }}' | jq -r '.package_context.owner')
-            { 
-              echo "SOURCE_REPO=$SOURCE_REPO"
-              echo "SOURCE_RUN_ID=$SOURCE_RUN_ID"
-              echo "SOURCE_OWNER=$SOURCE_OWNER" 
-            } >> "$GITHUB_ENV"
-          
-      - if: ${{ env.SOURCE_OWNER != '' }}
-        name: Extract authentication token for ${{ env.SOURCE_OWNER }}
-        uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@main
+      - name: Restore Conan build state
+        uses: $/.github/actions/restore-conan-build-state
         with:
-          owner: ${{ env.SOURCE_OWNER }}
-          json-secrets: ${{ toJson(secrets) }}         
-
-      - name: Restore or create lockfile
-        run: |
-          LOCK_NAME="lock-${{ matrix.profile }}"
-          if [ -z "${{ env.SOURCE_REPO }}" ] || ! gh run download "$SOURCE_RUN_ID" --repo "$SOURCE_REPO"  --name "$LOCK_NAME"; then
-            echo "Creating lockfile locally"
-            conan lock create . --profile=${{ matrix.profile }} --lockfile-out=conan-lockfile.json
-          fi
-
-      - name: Restore Conan cache (optional)
-        if: ${{ inputs.use_cache == true }}
-        run: |
-          CACHE_NAME="cache-${{ matrix.profile }}.tgz"
-          if [ -n "${{ env.SOURCE_REPO }}" ] && gh run download "$SOURCE_RUN_ID" --name "$CACHE_NAME" --repo "$SOURCE_REPO" ; then
-            conan cache restore "$CACHE_NAME"
-          else
-            echo "Cache not found or no force-build, skipping restore"
-          fi
+          source-build-context: ${{ inputs.source-build-context != '' && inputs.source-build-context || inputs.force-build }}
+          json-secrets: ${{ toJson(secrets) }}
+          profile: ${{ matrix.profile }}
+          cache-mode: ${{ env.CACHE_MODE }}
+          create-lockfile-command: conan lock create . --profile=${{ matrix.profile }} --lockfile-out=conan-lockfile.json
 
       - name: Conan create
         shell: bash
@@ -264,7 +399,8 @@ jobs:
           fi
           LOCK_OPTIONS=""
           if [ "${{ inputs.build-missing }}" = "true" ]; then
-            conan graph build-order . -pr:h "${{ matrix.profile }}" --build=missing --format=json --reduce --order-by recipe -l conan-lockfile.json --lockfile-partial > "build-${{ matrix.profile }}.json"
+            # shellcheck disable=SC2086 # Split the generated sequence of -c options.
+            conan graph build-order . -pr:h "${{ matrix.profile }}" $CONAN_CONTEXT_CONF_ARGS --build=missing --format=json --reduce --order-by recipe -l conan-lockfile.json --lockfile-partial > "build-${{ matrix.profile }}.json"
             jq -r '.order[][].ref' < "build-${{ matrix.profile }}.json" | while read -r ref; do
               package_path="$(conan cache path "${ref}")"
               url="$(yq -r '.url'  < "${package_path}/conandata.yml" )"
@@ -306,7 +442,8 @@ jobs:
               git reset --hard "$sha"
               # Following command must exit if conan create fail because we've set on top of this script 'set -o pipefail'
               # Please do not add any command behind '| tee conan_create.log' that could change the return code
-              PREVIOUS_VERSION="${version}+${build}" conan create . -pr:h "${{ matrix.profile }}" -l ../conan-lockfile.json --lockfile-partial 2>&1 | tee conan_create.log
+              # shellcheck disable=SC2086 # Split the generated sequence of -c options.
+              PREVIOUS_VERSION="${version}+${build}" conan create . -pr:h "${{ matrix.profile }}" $CONAN_CONTEXT_CONF_ARGS -l ../conan-lockfile.json --lockfile-partial 2>&1 | tee conan_create.log
               cd ..
               if [ ${{ github.event_name }} != 'pull_request' ]; then
                 conan upload -r "${upload}" "${name}" --confirm
@@ -314,7 +451,8 @@ jobs:
             done
             LOCK_OPTIONS="--lockfile-partial"
           fi  
-          conan create . -pr:h "${{ matrix.profile }}" -l conan-lockfile.json $LOCK_OPTIONS 2>&1 | tee conan_create.log
+          # shellcheck disable=SC2086 # Split the generated sequence of -c options.
+          conan create . -pr:h "${{ matrix.profile }}" $CONAN_CONTEXT_CONF_ARGS -l conan-lockfile.json $LOCK_OPTIONS 2>&1 | tee conan_create.log
           if [ ${{ github.event_name }} != 'pull_request' ]; then
             conan upload -r "${upload}" "${repo}" --confirm
           fi   
@@ -327,24 +465,20 @@ jobs:
           path: build-${{ matrix.profile }}.json
           retention-days: 2
 
-      - name: Upload lockfile
-        uses: actions/upload-artifact@v4
+      - if: ${{ github.event_name != 'pull_request' }}
+        name: Upload Conan build state
+        uses: $/.github/actions/upload-conan-build-state
         with:
-          name: lock-${{ matrix.profile }}
-          path: conan-lockfile.json
-          retention-days: 1
+          profile: ${{ matrix.profile }}
+          cache-mode: ${{ env.CACHE_MODE }}
 
-      - name: Archive Conan cache
-        if: ${{ inputs.use_cache == true }}
-        run: |
-          conan cache save --file "cache-${{ matrix.profile }}.tgz"  --no-source "*/*:*"
-
-      - if: ${{ inputs.use_cache == true }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: cache-${{ matrix.profile }}.tgz
-          path: cache-${{ matrix.profile }}.tgz
-          retention-days: 1
+  skip-collector:
+    runs-on: ubuntu-latest
+    needs:
+      - collector-relevance
+    if: inputs.build-missing == true && needs.collector-relevance.outputs.should-build != 'true'
+    steps:
+      - run: echo "Changed package is not present in the collector dependency graph for any configured profile. Skipping collector rebuild and context delivery."
           
   rebuild-collectors:
     runs-on: ubuntu-latest
@@ -366,7 +500,7 @@ jobs:
           echo "COLLECTOR_OWNER=${owner}" >> "$GITHUB_ENV"
 
       - name: Extract authentication token for ${{ env.COLLECTOR_OWNER }}
-        uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@main
+        uses: $/.github/actions/gh-auth-owner
         with:
           owner: ${{ env.COLLECTOR_OWNER }}
           json-secrets: ${{ toJson(secrets) }}
@@ -398,28 +532,23 @@ jobs:
             exit 1
           fi
 
+      - id: package-context
+        name: Build package source context
+        uses: $/.github/actions/build-source-build-context
+        with:
+          append-key: package_context
+
       - name: Dispatch workflow of ${{ matrix.collector }} on ${{ github.ref_name }}
         run: |
           SHORT_SHA=${GITHUB_SHA::7}
-          JSON=$(jq -n --compact-output '{
-            package_context: {
-              repo: "'"${GITHUB_REPOSITORY}"'",
-              owner: "'"${GITHUB_REPOSITORY_OWNER}"'",
-              run_id: '"$GITHUB_RUN_ID"',
-              run_number: '"$GITHUB_RUN_NUMBER"',
-              run_attempt: '"$GITHUB_RUN_ATTEMPT"',
-              sha: "'"${GITHUB_SHA}"'",
-              ref: "'"${GITHUB_REF}"'",
-              actor: "'"${GITHUB_ACTOR}"'",
-              workflow: "'"${GITHUB_WORKFLOW}"'"
-            } 
-          }')
+          JSON='${{ steps.package-context.outputs.context }}'
           echo "context pass $JSON"
-          echo "command gh workflow run ${TARGET_WORKFLOW} --repo ${{ matrix.collector }} --ref ${{ github.ref_name }} --field built_package=$JSON"
+          echo "command gh workflow run ${TARGET_WORKFLOW} --repo ${{ matrix.collector }} --ref ${{ github.ref_name }} --field source_build_context=$JSON --field built_package=$JSON"
           gh workflow run "${TARGET_WORKFLOW}" \
             --repo "${{ matrix.collector }}" \
             --ref "${{ github.ref_name }}" \
-            --field rebuild_cause="Change in ${{ github.ref_name }} of ${{ github.repository }} (sha $SHORT_SHA)" \
+            --field rebuild_cause="Rebuild collector due to package change in ${{ github.repository }} on ${{ github.ref_name }} (sha $SHORT_SHA)" \
+            --field source_build_context="$JSON" \
             --field built_package="$JSON"            
 
   rebuild-context:
@@ -441,13 +570,28 @@ jobs:
           echo "Owner: ${OWNER}"
           echo "CONTEXT_OWNER=${OWNER}" >> "$GITHUB_ENV"
       - name: Extract authentication token
-        uses: Group-Devices/emb-github-workflows/.github/actions/gh-auth-owner@main
+        uses: $/.github/actions/gh-auth-owner
         with:
           owner: ${{ env.CONTEXT_OWNER }}
           json-secrets: ${{ toJson(secrets) }}
+      - id: collector-context
+        name: Build collector source context
+        uses: $/.github/actions/build-source-build-context
+        with:
+          append-key: collector_context
+          incoming-context: ${{ inputs.source-build-context }}
+          fallback-context: ${{ inputs.force-build }}
       - name: Call context delivery  
         run: |  
           context=$(yq e '.bundle' "${CONAN_CONTEXT_PATH}")
+          SOURCE_BUILD_CONTEXT='${{ steps.collector-context.outputs.context }}'
+          DELIVERY_BUILD_CONTEXT=$(printf '%s' "$SOURCE_BUILD_CONTEXT" | jq -c '. + {delivery_options: ((.delivery_options // {}) + {docs_enabled: false})}')
+          COLLECTOR_REPO=$(echo "$DELIVERY_BUILD_CONTEXT" | jq -r '.collector_context.repo // "unknown-collector"')
+          PACKAGE_REPO=$(echo "$DELIVERY_BUILD_CONTEXT" | jq -r '.package_context.repo // "unknown-package"')
+          COLLECTOR_NAME=${COLLECTOR_REPO#*/}
+          PACKAGE_NAME=${PACKAGE_REPO#*/}
           gh workflow run "delivery.yml" \
             --repo "${context}" \
-            --ref "${{ github.ref_name }}"     
+            --ref "${{ github.ref_name }}" \
+            --field rebuild_cause="Rebuild context after collector rebuild (${COLLECTOR_NAME}) due to package change in ${PACKAGE_NAME} on ${{ github.ref_name }}" \
+            --field source_build_context="$DELIVERY_BUILD_CONTEXT"

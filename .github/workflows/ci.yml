@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - main
+      - release/*
   pull_request:
 
 jobs:
@@ -16,4 +17,12 @@ jobs:
         shell: bash
       - name: Check workflow files
         run: ${{ steps.get_actionlint.outputs.executable }} -color -config-file actionlint.yaml
+        shell: bash
+
+  validate-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate workflow contracts
+        run: bash .github/scripts/validate_workflow_contracts.sh
         shell: bash
