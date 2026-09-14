@@ -473,6 +473,38 @@ jobs:
           profile: ${{ matrix.profile }}
           cache-mode: ${{ env.CACHE_MODE }}
 
+  docker-profile-plan:
+    runs-on: eks-runner-linux-x64-medium
+    needs: generate-conan-context
+    outputs:
+      profiles: ${{ steps.plan.outputs.profiles }}
+    container:
+      image: repository.nexus.vixtechnology.com/docker-internal-group/aurora-compiler:main
+      credentials:
+        username: ${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
+        password: ${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: conan-context
+          path: .conan-context
+      - name: Configure Conan
+        uses: Group-Devices/emb-github-workflows/.github/actions/configure-conan@release/v1.0
+        with:
+          json-secrets: ${{ toJson(secrets) }}
+          conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
+      - id: plan
+        name: Select Docker profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          selected=()
+          while IFS= read -r profile; do
+            mode=$(conan profile show -pr:h "$profile" --format=json | jq -r '.host.conf["user.runtime:mode"] // ""')
+            [ "$mode" != docker ] || selected+=("$profile")
+          done < <(yq -r '.build.profiles[]' "$CONAN_CONTEXT_PATH")
+          jq -cn --args "${selected[@]}" '$ARGS.positional' | sed 's/^/profiles=/' >> "$GITHUB_OUTPUT"
+
   skip-collector:
     runs-on: ubuntu-latest
     needs:
