@@ -478,6 +478,7 @@ jobs:
     needs: generate-conan-context
     outputs:
       profiles: ${{ steps.plan.outputs.profiles }}
+      image-target: ${{ steps.plan.outputs.image-target }}
     container:
       image: repository.nexus.vixtechnology.com/docker-internal-group/aurora-compiler:main
       credentials:
@@ -499,6 +500,14 @@ jobs:
         run: |
           set -euo pipefail
           selected=()
+          source_context='${{ inputs.source-build-context != '' && inputs.source-build-context || inputs.force-build }}'
+          source_package=$(printf '%s' "$source_context" | jq -r '.package_context.name // empty')
+          image_target=""
+          export source_package
+          if [ -n "$source_package" ]; then
+            image_target=$(yq -r '.docker.framework.triggers[env(source_package)] // ""' "$CONAN_CONTEXT_PATH")
+          fi
+          echo "image-target=$image_target" >> "$GITHUB_OUTPUT"
           while IFS= read -r profile; do
             mode=$(conan profile show -pr:h "$profile" --format=json | jq -r '.host.conf["user.runtime:mode"] // ""')
             [ "$mode" != docker ] || selected+=("$profile")
