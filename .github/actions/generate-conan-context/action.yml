@@ -18,6 +18,9 @@ outputs:
   collectors-list:
     description: "The list of collectors"
     value: ${{ steps.generate-collectors-list.outputs.list }}
+  docker-config:
+    description: "Optional Docker build configuration from the Conan context"
+    value: ${{ steps.generate-docker-config.outputs.config }}
 
 runs:
   using: "composite"
@@ -200,6 +203,12 @@ runs:
           exit 1
         fi
 
+    - name: 'Output Docker build configuration'
+      id: generate-docker-config
+      shell: bash
+      run: |
+        docker_config=$(yq -o=json '.docker // {}' "${CONAN_CONTEXT_PATH}" | jq -c)
+        echo "config=${docker_config}" >> "$GITHUB_OUTPUT"
     - name: 'Upload conan context'
       uses: actions/upload-artifact@v6
       with:

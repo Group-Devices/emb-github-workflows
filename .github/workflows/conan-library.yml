@@ -83,6 +83,7 @@ jobs:
     outputs:
       build-profile-list: ${{ steps.generate-conan-context.outputs.build-profile-list }}
       collectors-list: ${{ steps.generate-conan-context.outputs.collectors-list }}
+      docker-config: ${{ steps.generate-conan-context.outputs.docker-config }}
     steps:
       - uses: actions/checkout@v6
       - uses: $/.github/actions/generate-conan-context
