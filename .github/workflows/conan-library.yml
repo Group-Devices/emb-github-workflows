@@ -512,7 +512,7 @@ jobs:
             mode=$(conan profile show -pr:h "$profile" --format=json | jq -r '.host.conf["user.runtime:mode"] // ""')
             [ "$mode" != docker ] || selected+=("$profile")
           done < <(yq -r '.build.profiles[]' "$CONAN_CONTEXT_PATH")
-          jq -cn --args "${selected[@]}" '$ARGS.positional' | sed 's/^/profiles=/' >> "$GITHUB_OUTPUT"
+          jq -cn '$ARGS.positional' --args "${selected[@]}" | sed 's/^/profiles=/' >> "$GITHUB_OUTPUT"
 
   skip-collector:
     runs-on: ubuntu-latest
