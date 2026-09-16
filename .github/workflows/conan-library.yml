@@ -517,6 +517,76 @@ jobs:
           done < <(yq -r '.build.profiles[]' "$CONAN_CONTEXT_PATH")
           jq -cn '$ARGS.positional' --args "${selected[@]}" | sed 's/^/profiles=/' >> "$GITHUB_OUTPUT"
 
+  dispatch-docker-image-build:
+    runs-on: ubuntu-latest
+    needs:
+      - generate-conan-context
+      - build-and-upload
+      - docker-profile-plan
+    # A collector has been published and at least one of its profiles is a
+    # Docker runtime.  The context owns the image recipe and dispatches its
+    # reusable secretary-docker workflow from there.
+    if: >-
+      always() &&
+      inputs.run-as-fast-build == false &&
+      inputs.build-missing == true &&
+      needs.build-and-upload.result == 'success' &&
+      needs.docker-profile-plan.result == 'success' &&
+      needs.docker-profile-plan.outputs.profiles != '[]'
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: conan-context
+          path: .conan-context
+
+      - id: destination
+        name: Resolve Docker build workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          context="${CONAN_CONTEXT_PATH}"
+          bundle=$(yq -r '.bundle // ""' "$context")
+          if yq -e '.docker.framework' "$context" >/dev/null; then
+            workflow="build-framework.yml"
+          elif yq -e '.docker.project' "$context" >/dev/null; then
+            workflow="build-project-images.yml"
+          else
+            echo "No Docker image workflow is declared by this context" >&2
+            exit 1
+          fi
+          test -n "$bundle" && test "$bundle" != "null"
+          owner=${bundle%%/*}
+          test -n "$owner" && test "$owner" != "$bundle"
+          echo "bundle=$bundle" >> "$GITHUB_OUTPUT"
+          echo "owner=$owner" >> "$GITHUB_OUTPUT"
+          echo "workflow=$workflow" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate context owner
+        uses: $/.github/actions/gh-auth-owner
+        with:
+          owner: ${{ steps.destination.outputs.owner }}
+          json-secrets: ${{ toJson(secrets) }}
+
+      - name: Check Docker build destination
+        shell: bash
+        run: |
+          set -euo pipefail
+          repository="${{ steps.destination.outputs.bundle }}"
+          workflow="${{ steps.destination.outputs.workflow }}"
+          ref="${{ github.ref_name }}"
+          gh repo view "$repository" --json name --jq .name >/dev/null
+          gh api "repos/$repository/branches/$ref" --silent >/dev/null
+          gh api "repos/$repository/contents/.github/workflows/$workflow?ref=$ref" --silent >/dev/null
+
+      - name: Dispatch Docker image build
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Dispatching ${{ steps.destination.outputs.workflow }} in ${{ steps.destination.outputs.bundle }} for ${{ github.ref_name }}"
+          gh workflow run "${{ steps.destination.outputs.workflow }}" \
+            --repo "${{ steps.destination.outputs.bundle }}" \
+            --ref "${{ github.ref_name }}"
+
   skip-collector:
     runs-on: ubuntu-latest
     needs:
