@@ -407,12 +407,6 @@ jobs:
           ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
           ALL_VARS_JSON: ${{ toJSON(vars) }}
         run: |
-          if printf '%s' "$ALL_VARS_JSON" | jq -e 'has("DPU_ENDPOINT_PROD")' >/dev/null; then
-            echo "DPU_ENDPOINT_PROD is available through ALL_VARS_JSON"
-          else
-            echo "DPU_ENDPOINT_PROD is not available through ALL_VARS_JSON"
-            exit 1
-          fi
           set -o pipefail
           upload=$(yq e '.upload' "${CONAN_CONTEXT_PATH}")
           if [ -z "${upload}" ] || [ "null" = "${upload}" ]; then
