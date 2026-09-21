@@ -58,6 +58,11 @@ on:
         required: false
         type: boolean
         default: false
+      fetch-submodules:
+        description: 'Fetch Git submodules for package build'
+        required: false
+        type: boolean
+        default: false
 
 
 env:
@@ -317,6 +322,8 @@ jobs:
         password: ${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          submodules: ${{ inputs.fetch-submodules }}
       - name: Set safe git path
         run: |
           repo=$(basename ${{ github.repository }})
