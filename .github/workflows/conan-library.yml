@@ -394,6 +394,18 @@ jobs:
           cache-mode: ${{ env.CACHE_MODE }}
           create-lockfile-command: conan lock create . --profile=${{ matrix.profile }} --lockfile-out=conan-lockfile.json
 
+      - name: Check caller repository variables
+        shell: bash
+        env:
+          TEST_ENDPOINT: ${{ vars.DPU_ENDPOINT_PROD }}
+        run: |
+          if [ -n "$TEST_ENDPOINT" ]; then
+            echo "DPU_ENDPOINT_PROD is available"
+          else
+            echo "DPU_ENDPOINT_PROD is not available"
+            exit 1
+          fi
+
       - name: Conan create
         shell: bash
         env:
