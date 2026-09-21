@@ -63,6 +63,11 @@ on:
         required: false
         type: boolean
         default: false
+      github-environment:
+        description: 'Optional GitHub environment used by the package build'
+        required: false
+        type: string
+        default: ''
 
 
 env:
@@ -299,6 +304,7 @@ jobs:
             echo "relevant-profiles=[]" >> "$GITHUB_OUTPUT"
           fi
   build-and-upload:
+    environment: ${{ inputs.github-environment }}
     runs-on: ${{ startsWith(github.event.repository.name, 'qt') && 'eks-runner-linux-x64-large' || 'eks-runner-linux-x64-medium' }}
     if: >-
       always() &&
@@ -395,23 +401,18 @@ jobs:
           cache-mode: ${{ env.CACHE_MODE }}
           create-lockfile-command: conan lock create . --profile=${{ matrix.profile }} --lockfile-out=conan-lockfile.json
 
-      - name: Check caller repository variables
-        shell: bash
-        env:
-          TEST_ENDPOINT: ${{ vars.DPU_ENDPOINT_PROD }}
-        run: |
-          if [ -n "$TEST_ENDPOINT" ]; then
-            echo "DPU_ENDPOINT_PROD is available"
-          else
-            echo "DPU_ENDPOINT_PROD is not available"
-            exit 1
-          fi
-
       - name: Conan create
         shell: bash
         env:
           ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
+          ALL_VARS_JSON: ${{ toJSON(vars) }}
         run: |
+          if printf '%s' "$ALL_VARS_JSON" | jq -e 'has("DPU_ENDPOINT_PROD")' >/dev/null; then
+            echo "DPU_ENDPOINT_PROD is available through ALL_VARS_JSON"
+          else
+            echo "DPU_ENDPOINT_PROD is not available through ALL_VARS_JSON"
+            exit 1
+          fi
           set -o pipefail
           upload=$(yq e '.upload' "${CONAN_CONTEXT_PATH}")
           if [ -z "${upload}" ] || [ "null" = "${upload}" ]; then
