@@ -511,6 +511,14 @@ jobs:
         run: |
           set -euo pipefail
           selected=()
+          # A Docker host profile alone does not make a collector an image
+          # producer.  Only contexts that provide a framework or project
+          # recipe may dispatch a secretary-docker workflow.
+          if ! yq -e '(.docker.framework != null) or (.docker.project != null)' "$CONAN_CONTEXT_PATH" >/dev/null; then
+            echo "image-target=" >> "$GITHUB_OUTPUT"
+            echo "profiles=[]" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           source_context='${{ inputs.source-build-context != '' && inputs.source-build-context || inputs.force-build }}'
           source_package=$(printf '%s' "$source_context" | jq -r '.package_context.name // empty')
           image_target=""
