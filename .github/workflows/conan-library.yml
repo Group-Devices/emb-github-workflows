@@ -539,13 +539,16 @@ jobs:
       - generate-conan-context
       - build-and-upload
       - docker-profile-plan
-    # A collector has been published and at least one of its profiles is a
-    # Docker runtime.  The context owns the image recipe and dispatches its
-    # reusable secretary-docker workflow from there.
+    # A delivery collector has been published and at least one of its profiles
+    # is a Docker runtime. Feature/WIP builds must not dispatch an image build:
+    # their branch is intentionally not required to exist in the context repo.
+    # The context owns the image recipe and dispatches its reusable
+    # secretary-docker workflow from there.
     if: >-
       always() &&
       inputs.run-as-fast-build == false &&
       inputs.build-missing == true &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) &&
       needs.build-and-upload.result == 'success' &&
       needs.docker-profile-plan.result == 'success' &&
       needs.docker-profile-plan.outputs.profiles != '[]'
