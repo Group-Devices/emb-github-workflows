@@ -451,7 +451,8 @@ jobs:
               fi
               echo "${OWNER_GIT_TOKEN}" > mytoken.txt
               gh auth login --with-token < mytoken.txt
-              rm mytoken.txt              
+              rm mytoken.txt
+              gh auth setup-git
               echo "extracting package name and version from $ref"
               name="${ref%/*}"
               prev="${ref#*/}"
@@ -464,6 +465,12 @@ jobs:
               echo "Ripple building ${name} from version ${version} build ${build} ...."
               cd "${name}"
               git reset --hard "$sha"
+              if [ -f .gitmodules ]; then
+                  echo "Fetching submodules for ${name}"
+                  git submodule sync --recursive
+                  git -c url."https://github.com/".insteadOf="git@github.com:" \
+                      submodule update --init --recursive
+              fi
               # Following command must exit if conan create fail because we've set on top of this script 'set -o pipefail'
               # Please do not add any command behind '| tee conan_create.log' that could change the return code
               # shellcheck disable=SC2086 # Split the generated sequence of -c options.
