@@ -68,6 +68,11 @@ on:
         required: false
         type: string
         default: ''
+      extra-pip-packages:
+        description: 'Space-separated extra pip packages to install before Conan lock/create (semversioner is always installed)'
+        required: false
+        type: string
+        default: ''
 
 
 env:
@@ -400,6 +405,21 @@ jobs:
           profile: ${{ matrix.profile }}
           cache-mode: ${{ env.CACHE_MODE }}
           create-lockfile-command: conan lock create . --profile=${{ matrix.profile }} --lockfile-out=conan-lockfile.json
+      - name: Install pip packages for Conan recipes
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkgs="semversioner ${{ inputs.extra-pip-packages }}"
+          echo "Installing pip packages: ${pkgs}"
+          venv=/tmp/conan-extra-pip
+          if python3 -m venv "${venv}"; then
+            "${venv}/bin/pip" install --disable-pip-version-check ${pkgs}
+            site="$("${venv}/bin/python" -c "import sysconfig; print(sysconfig.get_path('purelib'))")"
+            echo "PYTHONPATH=${site}${PYTHONPATH:+:${PYTHONPATH}}" >> "${GITHUB_ENV}"
+          else
+            # Compiler images may lack python3-venv; CI containers are disposable.
+            python3 -m pip install --disable-pip-version-check --break-system-packages ${pkgs}
+          fi
 
       - name: Conan create
         shell: bash
