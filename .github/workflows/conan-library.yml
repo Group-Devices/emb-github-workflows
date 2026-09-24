@@ -57,6 +57,11 @@ on:
         required: false
         type: boolean
         default: false
+      extra-pip-packages:
+        description: 'Space-separated extra pip packages to install before Conan lock/create (semversioner is always installed)'
+        required: false
+        type: string
+        default: ''
 
 
 env:
@@ -224,6 +229,12 @@ jobs:
         with:
           owner: ${{ env.SOURCE_OWNER }}
           json-secrets: ${{ toJson(secrets) }}         
+
+      - name: Install pip packages for Conan recipes
+        shell: bash
+        run: |
+          echo "Installing semversioner ${{ inputs.extra-pip-packages }}"
+          python3 -m pip install --disable-pip-version-check semversioner ${{ inputs.extra-pip-packages }}
 
       - name: Restore or create lockfile
         run: |
