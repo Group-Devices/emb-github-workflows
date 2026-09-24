@@ -397,14 +397,6 @@ jobs:
             echo "WORKFLOW=$GITHUB_WORKFLOW"
           } >> "$GITHUB_ENV"
 
-      - name: Restore Conan build state
-        uses: $/.github/actions/restore-conan-build-state
-        with:
-          source-build-context: ${{ inputs.source-build-context != '' && inputs.source-build-context || inputs.force-build }}
-          json-secrets: ${{ toJson(secrets) }}
-          profile: ${{ matrix.profile }}
-          cache-mode: ${{ env.CACHE_MODE }}
-          create-lockfile-command: conan lock create . --profile=${{ matrix.profile }} --lockfile-out=conan-lockfile.json
       - name: Install pip packages for Conan recipes
         shell: bash
         run: |
@@ -420,6 +412,15 @@ jobs:
             # Compiler images may lack python3-venv; CI containers are disposable.
             python3 -m pip install --disable-pip-version-check --break-system-packages ${pkgs}
           fi
+
+      - name: Restore Conan build state
+        uses: $/.github/actions/restore-conan-build-state
+        with:
+          source-build-context: ${{ inputs.source-build-context != '' && inputs.source-build-context || inputs.force-build }}
+          json-secrets: ${{ toJson(secrets) }}
+          profile: ${{ matrix.profile }}
+          cache-mode: ${{ env.CACHE_MODE }}
+          create-lockfile-command: conan lock create . --profile=${{ matrix.profile }} --lockfile-out=conan-lockfile.json
 
       - name: Conan create
         shell: bash
