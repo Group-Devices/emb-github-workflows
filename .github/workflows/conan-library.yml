@@ -58,6 +58,18 @@ on:
         required: false
         type: boolean
         default: false
+<<<<<<< HEAD
+=======
+      use_cache:
+        required: false
+        type: boolean
+        default: false
+      extra-pip-packages:
+        description: 'Space-separated extra pip packages to install before Conan lock/create (semversioner is always installed)'
+        required: false
+        type: string
+        default: ''
+>>>>>>> 7363549 (Install semversioner before Conan lock create.)
 
 
 env:
@@ -377,6 +389,12 @@ jobs:
             echo "ACTOR=$GITHUB_ACTOR"
             echo "WORKFLOW=$GITHUB_WORKFLOW"
           } >> "$GITHUB_ENV"
+
+      - name: Install pip packages for Conan recipes
+        shell: bash
+        run: |
+          echo "Installing semversioner ${{ inputs.extra-pip-packages }}"
+          python3 -m pip install --disable-pip-version-check semversioner ${{ inputs.extra-pip-packages }}
 
       - name: Restore Conan build state
         uses: $/.github/actions/restore-conan-build-state
