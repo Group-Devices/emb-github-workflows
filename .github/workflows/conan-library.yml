@@ -58,8 +58,6 @@ on:
         required: false
         type: boolean
         default: false
-<<<<<<< HEAD
-=======
       use_cache:
         required: false
         type: boolean
@@ -69,7 +67,6 @@ on:
         required: false
         type: string
         default: ''
->>>>>>> 7363549 (Install semversioner before Conan lock create.)
 
 
 env:
