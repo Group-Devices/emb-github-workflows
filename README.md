@@ -74,6 +74,37 @@ So the flow is:
 
 This keeps repository workflows generic while centralizing environment-specific Conan setup in the context package used by the bundle.
 
+### ALM releases
+
+`conan-context-delivery.yml` accepts either the existing `almRelease` mapping or
+an `almReleases` list. Each list entry has the same fields as the single mapping,
+including its own `almUrl`, `almUsernameSecret`, and `almPasswordSecret`. Do not
+define both forms in one context.
+
+```yaml
+almReleases:
+  - name: Secretary.demo-main.2
+    basedReleaseName: Secretary.demo-main.0
+    account: KubaPay
+    almUrl: https://webadmin.api.dpu.cd.assurenextgen.com
+    almUsernameSecret: ALM_CD_USERNAME
+    almPasswordSecret: ALM_CD_PASSWORD
+    SDKs:
+      ALM: {name: ALM_SYS, version: 3.8.17-4000.cd}
+      VOS: {name: VOS_SYS, version: 1.9.0-11000.cd}
+      SCR: {name: SCR_SYS, version: 1.15.0-8000.cd}
+    externalRepo:
+      target: repository/secretary-demo-main
+      distribution: secretary-demo
+      component: main
+      installPackages: [secretary-demo]
+```
+
+The workflow waits for collector APT uploads, validates all release entries and
+their credential references, then checks, creates or updates, and publishes each
+release in list order. ALM releases declare which APT resources to deploy; they
+do not upload packages to ALM. The workflow requires `almcli` 1.1.3 or newer.
+
 ## Project Architecture
 
 The workspace is organized around four repository families that play different roles in the build.
