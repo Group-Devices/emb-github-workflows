@@ -374,7 +374,7 @@ jobs:
           set -euo pipefail
 
           # Select either the legacy mapping or every entry in the release list.
-          release_paths=$(yq '.' "${CONAN_CONTEXT_PATH}" | jq -r '
+          release_paths=$(yq -o=json '.' "${CONAN_CONTEXT_PATH}" | jq -r '
             if has("almRelease") and has("almReleases") then
               error("Specify either almRelease or almReleases, not both")
             elif has("almRelease") then
