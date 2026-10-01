@@ -58,6 +58,11 @@ on:
         required: false
         type: boolean
         default: false
+      extra-pip-packages:
+        description: 'Space-separated extra pip packages to install before Conan lock/create (semversioner is always installed)'
+        required: false
+        type: string
+        default: ''
 
 
 env:
@@ -84,6 +89,8 @@ jobs:
       build-profile-list: ${{ steps.generate-conan-context.outputs.build-profile-list }}
       collectors-list: ${{ steps.generate-conan-context.outputs.collectors-list }}
       collector-topology: ${{ steps.generate-conan-context.outputs.collector-topology }}
+      docker-config: ${{ steps.generate-conan-context.outputs.docker-config }}
+
     steps:
       - uses: actions/checkout@v6
       - uses: $/.github/actions/generate-conan-context
@@ -120,10 +127,18 @@ jobs:
         run: |
           cat coverage/Testing/Temporary/LastTest*
 
-      - name: Setup Python
+      # The non-Docker Linux publisher explicitly resolves `python3` from
+      # PATH and creates its own virtual environment from it.  Use a complete,
+      # current interpreter rather than the compiler image's system Python.
+      - name: Setup Python for test-result publishing
+        if: ${{ !cancelled() && hashFiles('coverage/junit-results.xml') != '' }}
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
-          python-version: 3.8
+          python-version: '3.12'
+
+      - name: Verify Python virtual-environment support
+        if: ${{ !cancelled() && hashFiles('coverage/junit-results.xml') != '' }}
+        run: python3 -c 'import sys, venv; print(sys.executable)'
           
       - name: Publish Test Results
         uses: EnricoMi/publish-unit-test-result-action/linux@v2
@@ -373,6 +388,22 @@ jobs:
             echo "WORKFLOW=$GITHUB_WORKFLOW"
           } >> "$GITHUB_ENV"
 
+      - name: Install pip packages for Conan recipes
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkgs="semversioner ${{ inputs.extra-pip-packages }}"
+          echo "Installing pip packages: ${pkgs}"
+          venv=/tmp/conan-extra-pip
+          if python3 -m venv "${venv}"; then
+            "${venv}/bin/pip" install --disable-pip-version-check ${pkgs}
+            site="$("${venv}/bin/python" -c "import sysconfig; print(sysconfig.get_path('purelib'))")"
+            echo "PYTHONPATH=${site}${PYTHONPATH:+:${PYTHONPATH}}" >> "${GITHUB_ENV}"
+          else
+            # Compiler images may lack python3-venv; CI containers are disposable.
+            python3 -m pip install --disable-pip-version-check --break-system-packages ${pkgs}
+          fi
+
       - name: Restore Conan build state
         uses: $/.github/actions/restore-conan-build-state
         with:
@@ -475,6 +506,131 @@ jobs:
         with:
           profile: ${{ matrix.profile }}
           cache-mode: ${{ env.CACHE_MODE }}
+
+  docker-profile-plan:
+    runs-on: eks-runner-linux-x64-medium
+    needs: generate-conan-context
+    # `build-missing` is set by collector rebuilds. Library/package builds
+    # publish Conan artifacts and trigger their collector afterwards.
+    if: inputs.run-as-fast-build == false && inputs.build-missing == true
+    outputs:
+      profiles: ${{ steps.plan.outputs.profiles }}
+      image-target: ${{ steps.plan.outputs.image-target }}
+    container:
+      image: repository.nexus.vixtechnology.com/docker-internal-group/aurora-compiler:main
+      credentials:
+        username: ${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
+        password: ${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: conan-context
+          path: .conan-context
+      - name: Configure Conan
+        uses: Group-Devices/emb-github-workflows/.github/actions/configure-conan@release/v1.0
+        with:
+          json-secrets: ${{ toJson(secrets) }}
+          conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
+      - id: plan
+        name: Select Docker profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          selected=()
+          # A Docker host profile alone does not make a collector an image
+          # producer.  Only contexts that provide a framework or project
+          # recipe may dispatch a secretary-docker workflow.
+          if ! yq -e '(.docker.framework != null) or (.docker.project != null)' "$CONAN_CONTEXT_PATH" >/dev/null; then
+            echo "image-target=" >> "$GITHUB_OUTPUT"
+            echo "profiles=[]" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          source_context='${{ inputs.source-build-context != '' && inputs.source-build-context || inputs.force-build }}'
+          source_package=$(printf '%s' "$source_context" | jq -r '.package_context.name // empty')
+          image_target=""
+          export source_package
+          if [ -n "$source_package" ]; then
+            image_target=$(yq -r '.docker.framework.triggers[env(source_package)] // ""' "$CONAN_CONTEXT_PATH")
+          fi
+          echo "image-target=$image_target" >> "$GITHUB_OUTPUT"
+          while IFS= read -r profile; do
+            mode=$(conan profile show -pr:h "$profile" --format=json | jq -r '.host.conf["user.runtime:mode"] // ""')
+            [ "$mode" != docker ] || selected+=("$profile")
+          done < <(yq -r '.build.profiles[]' "$CONAN_CONTEXT_PATH")
+          jq -cn '$ARGS.positional' --args "${selected[@]}" | sed 's/^/profiles=/' >> "$GITHUB_OUTPUT"
+
+  dispatch-docker-image-build:
+    runs-on: ubuntu-latest
+    needs:
+      - generate-conan-context
+      - build-and-upload
+      - docker-profile-plan
+    # A delivery collector has been published and at least one of its profiles
+    # is a Docker runtime. Feature/WIP builds must not dispatch an image build:
+    # their branch is intentionally not required to exist in the context repo.
+    # The context owns the image recipe and dispatches its reusable
+    # secretary-docker workflow from there.
+    if: >-
+      always() &&
+      inputs.run-as-fast-build == false &&
+      inputs.build-missing == true &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) &&
+      needs.build-and-upload.result == 'success' &&
+      needs.docker-profile-plan.result == 'success' &&
+      needs.docker-profile-plan.outputs.profiles != '[]'
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: conan-context
+          path: .conan-context
+
+      - id: destination
+        name: Resolve Docker build workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          context="${CONAN_CONTEXT_PATH}"
+          bundle=$(yq -r '.bundle // ""' "$context")
+          if yq -e '.docker.framework' "$context" >/dev/null; then
+            workflow="build-framework.yml"
+          elif yq -e '.docker.project' "$context" >/dev/null; then
+            workflow="build-project-images.yml"
+          else
+            echo "No Docker image workflow is declared by this context" >&2
+            exit 1
+          fi
+          test -n "$bundle" && test "$bundle" != "null"
+          owner=${bundle%%/*}
+          test -n "$owner" && test "$owner" != "$bundle"
+          echo "bundle=$bundle" >> "$GITHUB_OUTPUT"
+          echo "owner=$owner" >> "$GITHUB_OUTPUT"
+          echo "workflow=$workflow" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate context owner
+        uses: $/.github/actions/gh-auth-owner
+        with:
+          owner: ${{ steps.destination.outputs.owner }}
+          json-secrets: ${{ toJson(secrets) }}
+
+      - name: Check Docker build destination
+        shell: bash
+        run: |
+          set -euo pipefail
+          repository="${{ steps.destination.outputs.bundle }}"
+          workflow="${{ steps.destination.outputs.workflow }}"
+          ref="${{ github.ref_name }}"
+          gh repo view "$repository" --json name --jq .name >/dev/null
+          gh api "repos/$repository/branches/$ref" --silent >/dev/null
+          gh api "repos/$repository/contents/.github/workflows/$workflow?ref=$ref" --silent >/dev/null
+
+      - name: Dispatch Docker image build
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Dispatching ${{ steps.destination.outputs.workflow }} in ${{ steps.destination.outputs.bundle }} for ${{ github.ref_name }}"
+          gh workflow run "${{ steps.destination.outputs.workflow }}" \
+            --repo "${{ steps.destination.outputs.bundle }}" \
+            --ref "${{ github.ref_name }}"
 
   skip-collector:
     runs-on: ubuntu-latest

@@ -352,82 +352,95 @@ jobs:
   alm-release:
     runs-on: ubuntu-latest
     needs:
-      - check-conan-context
+      - clone-workspace
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
       - name: Install ALM CLI
+        env:
+          NEXUS_USERNAME: ${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
+          NEXUS_PASSCODE: ${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
         run: |
           pip install --upgrade pip
           pip uninstall -yes almcli || echo "almcli not installed"
-          pip install --upgrade --index-url "https://${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}@repository.nexus.vixtechnology.com/repository/voqa-pypi-snapshots/simple" almcli
+          pip install --upgrade --index-url "https://${NEXUS_USERNAME}:${NEXUS_PASSCODE}@repository.nexus.vixtechnology.com/repository/voqa-pypi-snapshots/simple" 'almcli>=1.1.3'
 
       - name: Create ALM release
         shell: bash
         env:
           ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
         run: |
-          set -x
-          set +e
-          set +o pipefail
-          echo "Check is release is needed"
-          alm_release=$(yq -r ".almRelease" "${CONAN_CONTEXT_PATH}")
-          if [ "null" = "${alm_release}" ] || [ -z "${alm_release}" ]; then
-            echo "No 'almRelease' in conan context : skipping ALM release creation"
+          set -euo pipefail
+
+          # Select either the legacy mapping or every entry in the release list.
+          release_paths=$(yq -o=json '.' "${CONAN_CONTEXT_PATH}" | jq -r '
+            if has("almRelease") and has("almReleases") then
+              error("Specify either almRelease or almReleases, not both")
+            elif has("almRelease") then
+              if .almRelease == null then empty
+              elif (.almRelease | type) != "object" then error("almRelease must be a mapping")
+              else ".almRelease" end
+            elif has("almReleases") then
+              if (.almReleases | type) != "array" or (.almReleases | length) == 0 then
+                error("almReleases must be a non-empty list")
+              elif ([.almReleases[].name] | unique | length) != (.almReleases | length) then
+                error("almReleases contains duplicate names")
+              else
+                .almReleases | to_entries[] | ".almReleases[\(.key)]"
+              end
+            else empty end
+          ')
+          if [ -z "${release_paths}" ]; then
+            echo "No ALM releases in conan context; skipping"
             exit 0
           fi
-          # Retrieve url username and password
-          almUrl=$(yq -r ".almRelease.almUrl" "${CONAN_CONTEXT_PATH}")
-          username_secret_var=$(yq -r ".almRelease.almUsernameSecret" "${CONAN_CONTEXT_PATH}")
-          echo "Looking for matching github secret ${username_secret_var}"
-          username_secret=$(printf '%s\n' "$ALL_SECRETS_JSON" | jq -r --arg name "$username_secret_var" '.[$name]')
-          if [ -z "${username_secret}" ] || [ "null" = "${username_secret}" ]; then
-            echo "Secret ${username_secret_var} not found !"
-            echo "Please add secret ${username_secret_var} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
-            exit 1
-          else
-            echo "Found secret ${username_secret_var}"
-          fi
-          password_secret_var=$(yq -r ".almRelease.almPasswordSecret" "${CONAN_CONTEXT_PATH}")
-          echo "Looking for matching github secret ${password_secret_var}"
-          password_secret=$(printf '%s\n' "$ALL_SECRETS_JSON" | jq -r --arg name "$password_secret_var" '.[$name]')
-          if [ -z "${password_secret}" ] || [ "null" = "${password_secret}" ]; then
-            echo "Secret ${password_secret_var} not found !"
-            echo "Please add secret ${password_secret_var} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
-            exit 1
-          else
-            echo "Found secret ${password_secret_var}"
-          fi
+          mapfile -t paths <<< "${release_paths}"
 
+          # Resolve every release and its credentials before changing anything in ALM.
+          urls=()
+          usernames=()
+          passwords=()
+          for release_path in "${paths[@]}"; do
+            almcli validateRelease --releaseFile="${CONAN_CONTEXT_PATH}" --releasePath="${release_path}"
 
-          echo "!!!! deliverable=$deliverable !!!!!!"
-          echo "Create ALM release"
-          almcli checkRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${username_secret}" --password="${password_secret}" --url="${almUrl}"
-          res=$?
-          if [ "${res}" = "0" ]; then
-            echo "Release already exists, skipping creation"
-            exit 0
-          else
-            echo "Release does not exist or is different, try creating it"
-            almcli createRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${username_secret}" --password="${password_secret}" --url="${almUrl}"
-            res=$?
-            if [ "${res}" != "0" ]; then
-              echo "almcli createRelease failed, try update"
-              almcli updateRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${username_secret}" --password="${password_secret}" --url="${almUrl}"
-              res=$?
-              if [ "${res}" != "0" ]; then
-                echo "almcli updateRelease failed"
-                exit 1
-              fi
-            fi
-            almcli publishRelease --log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --username="${username_secret}" --password="${password_secret}" --url="${almUrl}"
-            res=$?
-            if [ "${res}" != "0" ]; then
-              echo "almcli publishRelease failed"
+            url=$(yq -r "${release_path}.almUrl" "${CONAN_CONTEXT_PATH}")
+            username_secret_var=$(yq -r "${release_path}.almUsernameSecret" "${CONAN_CONTEXT_PATH}")
+            password_secret_var=$(yq -r "${release_path}.almPasswordSecret" "${CONAN_CONTEXT_PATH}")
+            if [ -z "${url}" ] || [ "${url}" = "null" ] ||
+               [ -z "${username_secret_var}" ] || [ "${username_secret_var}" = "null" ] ||
+               [ -z "${password_secret_var}" ] || [ "${password_secret_var}" = "null" ]; then
+              echo "Missing ALM URL or credential secret name at ${release_path}" >&2
               exit 1
             fi
-          fi
+            if ! username=$(printf '%s\n' "${ALL_SECRETS_JSON}" | jq -er --arg name "${username_secret_var}" '.[$name] | select(type == "string" and length > 0)'); then
+              echo "GitHub secret ${username_secret_var} not found for ${release_path}" >&2
+              exit 1
+            fi
+            if ! password=$(printf '%s\n' "${ALL_SECRETS_JSON}" | jq -er --arg name "${password_secret_var}" '.[$name] | select(type == "string" and length > 0)'); then
+              echo "GitHub secret ${password_secret_var} not found for ${release_path}" >&2
+              exit 1
+            fi
+            urls+=("${url}")
+            usernames+=("${username}")
+            passwords+=("${password}")
+          done
+
+          for index in "${!paths[@]}"; do
+            release_path=${paths[index]}
+            echo "Processing ALM release at ${release_path}"
+            alm_args=(--log=INFO --releaseFile="${CONAN_CONTEXT_PATH}" --releasePath="${release_path}"
+                      --username="${usernames[index]}" --password="${passwords[index]}"
+                      --url="${urls[index]}")
+            if almcli checkRelease "${alm_args[@]}"; then
+              echo "Release at ${release_path} is already published and up to date"
+              continue
+            fi
+            if ! almcli createRelease "${alm_args[@]}"; then
+              almcli updateRelease "${alm_args[@]}"
+            fi
+            almcli publishRelease "${alm_args[@]}"
+          done
 
   # Should be done for each pair profile, collector
   #  - profile because bianry artefact are diffrent depending on architecture
@@ -438,7 +451,6 @@ jobs:
       - preflight-checks
       - extract-collectors
       - repositories-preparation
-      - alm-release
     strategy:
       fail-fast: false
       matrix:
