@@ -324,9 +324,6 @@ jobs:
         password: ${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
     steps:
       - uses: actions/checkout@v6
-        with:
-           submodules: recursive
-           token: ${{ secrets.GIT_TOKEN_GROUP_DEVICES }}
       - name: Set safe git path
         run: |
           repo=$(basename ${{ github.repository }})
