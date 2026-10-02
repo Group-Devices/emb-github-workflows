@@ -656,6 +656,61 @@ jobs:
         run: |
           set -euo pipefail
 
+          echo "Building collector topology..."
+          
+          # Build child -> parent lookup
+          PARENT_MAP=$(
+            echo "$COLLECTOR_TOPOLOGY" | jq -c '
+              reduce (
+                to_entries[]
+                | .key as $parent
+                | (.value.children // [])[]
+                | { child: ., parent: $parent }
+              ) as $e
+              ({}; .[$e.child] = $e.parent)
+            '
+          )
+          
+          # Find root collectors (collectors never referenced as children)
+          ROOTS=$(
+            echo "$COLLECTOR_TOPOLOGY" | jq -c '
+              . as $topology
+              | ($topology | keys) as $all
+              | ([ .[]?.children[]? ] | unique) as $children
+              | $all - $children
+            '
+          )
+          
+          # Build first-level collectors (children of all roots)
+          FIRST_LEVEL_COLLECTORS=$(
+            jq -cn \
+              --argjson topology "$COLLECTOR_TOPOLOGY" \
+              --argjson roots "$ROOTS" '
+                [
+                  $roots[]
+                  | $topology[.]
+                  | (.children // [])[]
+                ] | unique
+              '
+          )
+          
+          echo "Collector topology:"
+          echo "$COLLECTOR_TOPOLOGY" | jq .
+          
+          echo "Root collectors:"
+          echo "$ROOTS" | jq .
+          
+          echo "First level collectors:"
+          echo "$FIRST_LEVEL_COLLECTORS" | jq .
+          
+          echo "Parent map:"
+          echo "$PARENT_MAP" | jq 
+
+          if [ "$(echo "$ROOTS" | jq 'length')" -ne 1 ]; then
+              echo "WARNING: Expected exactly one root collector, found:"
+              echo "$ROOTS" | jq .
+          fi
+          
           if [ "$COLLECTOR_TOPOLOGY" = "{}" ] || [ -z "$COLLECTOR_TOPOLOGY" ]; then
             echo "No collector topology configured: keeping existing behaviour"
             echo "collectors-list=$COLLECTORS" >> "$GITHUB_OUTPUT"
@@ -664,14 +719,14 @@ jobs:
 
           if [ "$BUILD_MISSING" != "true" ]; then
             # Normal package build: dispatch child collectors only.
-            selected=$(echo "$COLLECTOR_TOPOLOGY" | jq -c 'keys')
+            selected="$FIRST_LEVEL_COLLECTORS"
 
             echo "Normal build: dispatching child collectors: $selected"
             echo "collectors-list=$selected" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          parent=$(echo "$COLLECTOR_TOPOLOGY" | jq -r \
+          parent=$(echo "$PARENT_MAP" | jq -r \
             --arg current "$CURRENT_REPOSITORY" \
             '.[$current] // empty')
 
