@@ -18,6 +18,10 @@ on:
         required: false
         type: boolean
         default: true
+      rebuild-target:
+        description: "Optional rebuild entry point"
+        required: false
+        default: ""
       enable-rebuild-context:
         description: 'Enable or not the rebuild of context'
         required: false
@@ -653,11 +657,18 @@ jobs:
           COLLECTOR_TOPOLOGY: ${{ needs.generate-conan-context.outputs.collector-topology }}
           BUILD_MISSING: ${{ inputs.build-missing }}
           CURRENT_REPOSITORY: ${{ github.repository }}
+          REBUILD_TARGET: ${{ inputs.rebuild-target }}
         run: |
           set -euo pipefail
 
+          # ONE COLLECTOR
+          if [ "$COLLECTOR_TOPOLOGY" = "{}" ] || [ -z "$COLLECTOR_TOPOLOGY" ]; then
+            echo "One collector collectors-list=$COLLECTORS" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # COLLECTOR TOPOLOGY
           echo "Building collector topology..."
-          
           # Build child -> parent lookup
           PARENT_MAP=$(
             echo "$COLLECTOR_TOPOLOGY" | jq -c '
@@ -711,17 +722,16 @@ jobs:
               echo "$ROOTS" | jq .
           fi
           
-          if [ "$COLLECTOR_TOPOLOGY" = "{}" ] || [ -z "$COLLECTOR_TOPOLOGY" ]; then
-            echo "No collector topology configured: keeping existing behaviour"
-            echo "collectors-list=$COLLECTORS" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
           if [ "$BUILD_MISSING" != "true" ]; then
-            # Normal package build: dispatch child collectors only.
-            selected="$FIRST_LEVEL_COLLECTORS"
-
-            echo "Normal build: dispatching child collectors: $selected"
+            if  [ -n "$REBUILD_TARGET" ]; then
+                # Use specified rebuild target when specified
+                selected=$(jq -cn --arg target "$REBUILD_TARGET" '[$target]')
+                echo "Using rebuild target: $REBUILD_TARGET"
+            else
+                selected="$FIRST_LEVEL_COLLECTORS"
+                echo "No rebuild target defined."
+                echo "Fallback to first-level collectors: $FIRST_LEVEL_COLLECTORS"
+            fi
             echo "collectors-list=$selected" >> "$GITHUB_OUTPUT"
             exit 0
           fi
