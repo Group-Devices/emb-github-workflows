@@ -21,6 +21,7 @@ on:
       rebuild-target:
         description: "Optional rebuild entry point"
         required: false
+        type: string
         default: ""
       enable-rebuild-context:
         description: 'Enable or not the rebuild of context'
