@@ -670,6 +670,7 @@ jobs:
           fi
 
           # COLLECTOR TOPOLOGY
+          # 1- Extract mapping info
           echo "Building collector topology..."
           # Build child -> parent lookup
           PARENT_MAP=$(
@@ -724,6 +725,7 @@ jobs:
               echo "$ROOTS" | jq .
           fi
           
+          # 2- Package (not a collector) - check next target
           if [ "$BUILD_MISSING" != "true" ]; then
             if  [ -n "$REBUILD_TARGET" ]; then
                 # Check if REBUILD_TARGET valid
@@ -745,6 +747,7 @@ jobs:
             exit 0
           fi
 
+          # 3- Package (collector) - check next target
           parent=$(echo "$PARENT_MAP" | jq -r \
             --arg current "$CURRENT_REPOSITORY" \
             '.[$current] // empty')
