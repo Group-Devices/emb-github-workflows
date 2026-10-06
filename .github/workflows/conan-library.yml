@@ -623,9 +623,20 @@ jobs:
         run: |
           set -euo pipefail
           echo "Dispatching ${{ steps.destination.outputs.workflow }} in ${{ steps.destination.outputs.bundle }} for ${{ github.ref_name }}"
-          gh workflow run "${{ steps.destination.outputs.workflow }}" \
-            --repo "${{ steps.destination.outputs.bundle }}" \
-            --ref "${{ github.ref_name }}"
+          if [ "${{ steps.destination.outputs.workflow }}" = "build-project-images.yml" ] && \
+             yq -e '.docker.project.collectors' "$CONAN_CONTEXT_PATH" >/dev/null; then
+            # A context can build several project collectors. A collector
+            # publication should rebuild only its own image set; a manual
+            # context dispatch with no collector input still builds all sets.
+            gh workflow run "${{ steps.destination.outputs.workflow }}" \
+              --repo "${{ steps.destination.outputs.bundle }}" \
+              --ref "${{ github.ref_name }}" \
+              -f "collector=$PACKAGE_NAME"
+          else
+            gh workflow run "${{ steps.destination.outputs.workflow }}" \
+              --repo "${{ steps.destination.outputs.bundle }}" \
+              --ref "${{ github.ref_name }}"
+          fi
 
   skip-collector:
     runs-on: ubuntu-latest
