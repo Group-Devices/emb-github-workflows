@@ -563,8 +563,8 @@ jobs:
     # A delivery collector has been published and at least one of its profiles
     # is a Docker runtime. Feature/WIP builds must not dispatch an image build:
     # their branch is intentionally not required to exist in the context repo.
-    # The context owns the image recipe and dispatches its reusable
-    # secretary-docker workflow from there.
+    # Framework images are owned by the context; project images are owned by
+    # the collector that was just published.
     if: >-
       always() &&
       inputs.run-as-fast-build == false &&
@@ -588,16 +588,18 @@ jobs:
           bundle=$(yq -r '.bundle // ""' "$context")
           if yq -e '.docker.framework' "$context" >/dev/null; then
             workflow="build-framework.yml"
+            repository="$bundle"
           elif yq -e '.docker.project' "$context" >/dev/null; then
             workflow="build-project-images.yml"
+            repository="$GITHUB_REPOSITORY"
           else
             echo "No Docker image workflow is declared by this context" >&2
             exit 1
           fi
           test -n "$bundle" && test "$bundle" != "null"
-          owner=${bundle%%/*}
-          test -n "$owner" && test "$owner" != "$bundle"
-          echo "bundle=$bundle" >> "$GITHUB_OUTPUT"
+          owner=${repository%%/*}
+          test -n "$owner" && test "$owner" != "$repository"
+          echo "bundle=$repository" >> "$GITHUB_OUTPUT"
           echo "owner=$owner" >> "$GITHUB_OUTPUT"
           echo "workflow=$workflow" >> "$GITHUB_OUTPUT"
 
@@ -623,20 +625,9 @@ jobs:
         run: |
           set -euo pipefail
           echo "Dispatching ${{ steps.destination.outputs.workflow }} in ${{ steps.destination.outputs.bundle }} for ${{ github.ref_name }}"
-          if [ "${{ steps.destination.outputs.workflow }}" = "build-project-images.yml" ] && \
-             yq -e '.docker.project.collectors' "$CONAN_CONTEXT_PATH" >/dev/null; then
-            # A context can build several project collectors. A collector
-            # publication should rebuild only its own image set; a manual
-            # context dispatch with no collector input still builds all sets.
-            gh workflow run "${{ steps.destination.outputs.workflow }}" \
-              --repo "${{ steps.destination.outputs.bundle }}" \
-              --ref "${{ github.ref_name }}" \
-              -f "collector=$PACKAGE_NAME"
-          else
-            gh workflow run "${{ steps.destination.outputs.workflow }}" \
-              --repo "${{ steps.destination.outputs.bundle }}" \
-              --ref "${{ github.ref_name }}"
-          fi
+          gh workflow run "${{ steps.destination.outputs.workflow }}" \
+            --repo "${{ steps.destination.outputs.bundle }}" \
+            --ref "${{ github.ref_name }}"
 
   skip-collector:
     runs-on: ubuntu-latest
