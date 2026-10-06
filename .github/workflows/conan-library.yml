@@ -671,7 +671,7 @@ jobs:
 
           # COLLECTOR TOPOLOGY
           # 1- Extract mapping info
-          echo "Building collector topology..."
+          echo "Resolving collector topology..."
           # Build child -> parent lookup
           PARENT_MAP=$(
             echo "$COLLECTOR_TOPOLOGY" | jq -c '
@@ -709,16 +709,8 @@ jobs:
           )
           
           echo "Collector topology:"
-          echo "$COLLECTOR_TOPOLOGY" | jq .
-          
-          echo "Root collectors:"
-          echo "$ROOTS" | jq .
-          
-          echo "First level collectors:"
-          echo "$FIRST_LEVEL_COLLECTORS" | jq .
-          
-          echo "Parent map:"
-          echo "$PARENT_MAP" | jq 
+          echo "  Root collectors : $(echo "$ROOTS" | jq -c '.')"
+          echo "  Parent map      : $(echo "$PARENT_MAP" | jq -c '.')"
 
           if [ "$(echo "$ROOTS" | jq 'length')" -ne 1 ]; then
               echo "WARNING: Expected exactly one root collector, found:"
