@@ -771,18 +771,52 @@ jobs:
         run: |
           raw_repository="${{ needs.extract-collectors.outputs.raw_repository }}"
           raw_path="${{ needs.repositories-preparation.outputs.raw-path }}"
-
+      
           for deb in ./to_apt/*.deb; do
             [ -f "$deb" ] || continue
-
+      
             filename=$(basename "$deb")
-
+            url="${NEXUS_URL}/repository/${raw_repository}/${raw_path}/${filename}"
+            remote_file=$(mktemp)
+      
+            echo "Checking ${filename}"
+      
+            http_code=$(curl -s \
+              -o "${remote_file}" \
+              -w "%{http_code}" \
+              -u "${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}:${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}" \
+              "${url}")
+      
+            if [ "${http_code}" = "200" ]; then
+              local_sha=$(sha256sum "${deb}" | awk '{print $1}')
+              remote_sha=$(sha256sum "${remote_file}" | awk '{print $1}')
+      
+              echo "Artifact already exists - local_sha=${local_sha} remote_sha=${remote_sha}"
+      
+              if [ "${local_sha}" = "${remote_sha}" ]; then
+                echo "Skipping ${filename}: identical artifact already published"
+                rm -f "${remote_file}"
+                continue
+              fi
+      
+              echo "WARNING: ${filename} already exists but content differs"
+              echo "Attempting upload to expose repository redeploy policy"
+            elif [ "${http_code}" = "404" ]; then
+              echo "${filename} does not exist yet"
+            else
+              echo "Failed to check ${filename}: HTTP ${http_code}"
+              rm -f "${remote_file}"
+              exit 1
+            fi
+      
+            rm -f "${remote_file}"
+      
             echo "Uploading ${filename} to ${raw_repository}/${raw_path}"
-
+      
             curl --fail \
               -u "${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}:${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}" \
               --upload-file "${deb}" \
-              "${NEXUS_URL}/repository/${raw_repository}/${raw_path}/${filename}"
+              "${url}"
           done
 
 
