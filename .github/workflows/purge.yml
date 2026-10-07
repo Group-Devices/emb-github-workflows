@@ -134,7 +134,10 @@ jobs:
           fi
 
           if [ "${deliverable}" = "true" ]; then
-            apt_enabled=$(yq -r '.productPublish.apt.enabled // true' "${CONAN_CONTEXT_PATH}")
+            apt_enabled=$(yq -r '.productPublish.apt.enabled' "${CONAN_CONTEXT_PATH}")
+            if [ "${apt_enabled}" = "null" ] || [ -z "${apt_enabled}" ]; then
+              apt_enabled=true
+            fi
             raw_enabled=$(yq -r '.productPublish.raw.enabled // false' "${CONAN_CONTEXT_PATH}")
             raw_repository=$(yq -r '.productPublish.raw.repository // ""' "${CONAN_CONTEXT_PATH}")
 
