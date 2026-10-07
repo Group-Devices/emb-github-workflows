@@ -79,6 +79,9 @@ jobs:
       build-profiles-list: ${{ steps.generate-build-profiles-list.outputs.list }}
       deliverable: ${{ steps.generate-delivery.outputs.deliverable }}
       product_name: ${{ steps.generate-delivery.outputs.product_name }}
+      apt_enabled: ${{ steps.generate-delivery.outputs.apt_enabled }}
+      raw_enabled: ${{ steps.generate-delivery.outputs.raw_enabled }}
+      raw_repository: ${{ steps.generate-delivery.outputs.raw_repository }}
       from_repository_url: ${{ steps.generate-release-info.outputs.from_repository_url }}
       release_name: ${{ steps.generate-release-info.outputs.release_name }}
       conan_release_remote_name: ${{ steps.generate-release-info.outputs.conan_release_remote_name }}
@@ -129,9 +132,29 @@ jobs:
           else
             deliverable="true"
           fi
+
+          if [ "${deliverable}" = "true" ]; then
+            apt_enabled=$(yq -r '.productPublish.apt.enabled // true' "${CONAN_CONTEXT_PATH}")
+            raw_enabled=$(yq -r '.productPublish.raw.enabled // false' "${CONAN_CONTEXT_PATH}")
+            raw_repository=$(yq -r '.productPublish.raw.repository // ""' "${CONAN_CONTEXT_PATH}")
+
+            if [ "${raw_enabled}" = "true" ] && [ -z "${raw_repository}" ]; then
+              echo "productPublish.raw.repository must be defined when RAW publication is enabled"
+              exit 1
+            fi
+          else
+            apt_enabled=false
+            raw_enabled=false
+            raw_repository=""
+          fi
+
           echo "!!!! deliverable=$deliverable / product_name=$product_name !!!!!!"
+
           echo "deliverable=$deliverable" >> "$GITHUB_OUTPUT"
           echo "product_name=$product_name" >> "$GITHUB_OUTPUT"
+          echo "apt_enabled=$apt_enabled" >> "$GITHUB_OUTPUT"
+          echo "raw_enabled=$raw_enabled" >> "$GITHUB_OUTPUT"
+          echo "raw_repository=$raw_repository" >> "$GITHUB_OUTPUT"
 
       - name: Extract release info
         id: generate-release-info
@@ -207,7 +230,7 @@ jobs:
       - name: Set apt repository name
         id: set-apt-repo-name
         shell: bash
-        if: needs.extract-collectors.outputs.deliverable == 'true'
+        if: needs.extract-collectors.outputs.apt_enabled == 'true'
         run: |
             APT_PREFIX_NAME=${{ needs.extract-collectors.outputs.product_name }}
             if [ "null" = "${APT_PREFIX_NAME}" ] || [ -z "${APT_PREFIX_NAME}" ]; then
@@ -353,7 +376,7 @@ jobs:
           conan upload -f json --list downloaded.json -r "${{ needs.extract-collectors.outputs.conan_release_remote_name }}"
 
       - name: Recreate apt repository exists
-        if: needs.extract-collectors.outputs.deliverable == 'true'
+        if: needs.extract-collectors.outputs.apt_enabled == 'true'
         run: |
           conan_release_repository_url="${{ needs.extract-collectors.outputs.conan_release_remote_url }}"
           repository_url_base=$(echo "${conan_release_repository_url}" | cut -d'/' -f1-3)
@@ -378,7 +401,7 @@ jobs:
           done
 
       - name: Upload apt delivery
-        if: needs.extract-collectors.outputs.deliverable == 'true'
+        if: needs.extract-collectors.outputs.apt_enabled == 'true'
         run: |
             for deb in ./to_apt/*.deb; do
               [ -f "$deb" ] || continue

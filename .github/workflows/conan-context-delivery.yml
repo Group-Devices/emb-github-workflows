@@ -138,6 +138,9 @@ jobs:
       build-profiles-list: ${{ steps.generate-build-profiles-list.outputs.list }}
       deliverable: ${{ steps.generate-delivery.outputs.deliverable }}
       product_name: ${{ steps.generate-delivery.outputs.product_name }}
+      apt_enabled: ${{ steps.generate-delivery.outputs.apt_enabled }}
+      raw_enabled: ${{ steps.generate-delivery.outputs.raw_enabled }}
+      raw_repository: ${{ steps.generate-delivery.outputs.raw_repository }}
       from_repository_url: ${{ steps.generate-release-info.outputs.from_repository_url }}
       release_name: ${{ steps.generate-release-info.outputs.release_name }}
       conan_release_remote_name: ${{ steps.generate-release-info.outputs.conan_release_remote_name }}
@@ -188,9 +191,29 @@ jobs:
           else
             deliverable="true"
           fi
+
+          if [ "${deliverable}" = "true" ]; then
+            apt_enabled=$(yq -r '.productPublish.apt.enabled // true' "${CONAN_CONTEXT_PATH}")
+            raw_enabled=$(yq -r '.productPublish.raw.enabled // false' "${CONAN_CONTEXT_PATH}")
+            raw_repository=$(yq -r '.productPublish.raw.repository // ""' "${CONAN_CONTEXT_PATH}")
+
+            if [ "${raw_enabled}" = "true" ] && [ -z "${raw_repository}" ]; then
+              echo "productPublish.raw.repository must be defined when RAW publication is enabled"
+              exit 1
+            fi
+          else
+            apt_enabled=false
+            raw_enabled=false
+            raw_repository=""
+          fi
+
           echo "!!!! deliverable=$deliverable / product_name=$product_name !!!!!!"
+
           echo "deliverable=$deliverable" >> "$GITHUB_OUTPUT"
           echo "product_name=$product_name" >> "$GITHUB_OUTPUT"
+          echo "apt_enabled=$apt_enabled" >> "$GITHUB_OUTPUT"
+          echo "raw_enabled=$raw_enabled" >> "$GITHUB_OUTPUT"
+          echo "raw_repository=$raw_repository" >> "$GITHUB_OUTPUT"
 
       - name: Extract release info
         id: generate-release-info
@@ -228,6 +251,7 @@ jobs:
       - extract-collectors
     outputs:
       apt-repo-name: ${{ steps.set-apt-repo-name.outputs.apt-repo-name }}
+      raw-path: ${{ steps.set-raw-repo-path.outputs.raw_path }}
     steps:
       - name: Set repository authentication
         id: set-repository-authentication
@@ -266,7 +290,7 @@ jobs:
       - name: Set apt repository name
         id: set-apt-repo-name
         shell: bash
-        if: needs.extract-collectors.outputs.deliverable == 'true'
+        if: needs.extract-collectors.outputs.apt_enabled == 'true'
         run: |
             APT_PREFIX_NAME=${{ needs.extract-collectors.outputs.product_name }}
             if [ "null" = "${APT_PREFIX_NAME}" ] || [ -z "${APT_PREFIX_NAME}" ]; then
@@ -293,8 +317,34 @@ jobs:
             NEXUS_APT_DISTRIBUTION_NAME=${APT_PREFIX_NAME}
             echo "NEXUS_APT_DISTRIBUTION_NAME=${NEXUS_APT_DISTRIBUTION_NAME}" >> "$GITHUB_ENV"
 
+      - name: Set raw repository path
+        id: set-raw-repo-path
+        if: needs.extract-collectors.outputs.raw_enabled == 'true'
+        shell: bash
+        run: |
+          product_name="${{ needs.extract-collectors.outputs.product_name }}"
+          raw_repository="${{ needs.extract-collectors.outputs.raw_repository }}"
+
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            raw_delivery_name="${product_name}-v${GITHUB_REF_NAME}"
+          elif [ "${GITHUB_REF_TYPE}" = "branch" ] && [ "${GITHUB_REF_NAME}" = "main" ]; then
+            raw_delivery_name="${product_name}-main"
+          elif [ "${GITHUB_REF_TYPE}" = "branch" ] && [[ "${GITHUB_REF_NAME}" == release/* ]]; then
+            raw_delivery_name="${product_name}-${GITHUB_REF_NAME#release/}"
+          else
+            echo "Not able to determine RAW delivery path"
+            exit 1
+          fi
+
+          raw_path="${product_name}/${raw_delivery_name}"
+
+          echo "RAW repository: ${raw_repository}"
+          echo "RAW path: ${raw_path}"
+
+          echo "raw_path=${raw_path}" >> "$GITHUB_OUTPUT"
+
       - name: Ensure apt repository exists
-        if: needs.extract-collectors.outputs.deliverable == 'true'
+        if: needs.extract-collectors.outputs.apt_enabled == 'true'
         run: |
             echo "Nexus URL: $NEXUS_URL"
             response=$(curl -s -o output.json -w "%{http_code}\n" --header 'Content-Type: application/json' \
@@ -703,7 +753,7 @@ jobs:
             fi
           done
       - name: Upload apt delivery
-        if: needs.extract-collectors.outputs.deliverable == 'true'
+        if: needs.extract-collectors.outputs.apt_enabled == 'true'
         run: |
             for deb in ./to_apt/*.deb; do
               [ -f "$deb" ] || continue
@@ -712,6 +762,25 @@ jobs:
                 -H "Content-Type: multipart/form-data" --data-binary \
                 "@${deb}" "${NEXUS_URL}/repository/${{ needs.repositories-preparation.outputs.apt-repo-name }}/"
             done
+
+      - name: Upload raw delivery
+        if: needs.extract-collectors.outputs.raw_enabled == 'true'
+        run: |
+          raw_repository="${{ needs.extract-collectors.outputs.raw_repository }}"
+          raw_path="${{ needs.repositories-preparation.outputs.raw-path }}"
+
+          for deb in ./to_apt/*.deb; do
+            [ -f "$deb" ] || continue
+
+            filename=$(basename "$deb")
+
+            echo "Uploading ${filename} to ${raw_repository}/${raw_path}"
+
+            curl --fail \
+              -u "${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}:${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}" \
+              --upload-file "${deb}" \
+              "${NEXUS_URL}/repository/${raw_repository}/${raw_path}/${filename}"
+          done
 
 
       - name: 'Upload bundle release packages contents'
