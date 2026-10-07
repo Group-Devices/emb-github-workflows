@@ -18,6 +18,9 @@ outputs:
   collectors-list:
     description: "The list of collectors"
     value: ${{ steps.generate-collectors-list.outputs.list }}
+  collector-topology:
+    description: "Optional collector topology"
+    value: ${{ steps.generate-collector-topology.outputs.map }}
   docker-config:
     description: "Optional Docker build configuration from the Conan context"
     value: ${{ steps.generate-docker-config.outputs.config }}
@@ -203,12 +206,29 @@ runs:
           exit 1
         fi
 
+    - name: 'Output the collector topology'
+      id: generate-collector-topology
+      shell: bash
+      run: |
+        FIELD="build.collector_topology"
+        result=$(yq eval ".${FIELD} | type" "${CONAN_CONTEXT_PATH}")
+
+        if [ "$result" = "!!map" ]; then
+          echo "map=$(yq -r ".${FIELD}" "${CONAN_CONTEXT_PATH}" -o=json | jq -c)" >> "$GITHUB_OUTPUT"
+        elif [ "$result" = "!!null" ]; then
+          echo "map={}" >> "$GITHUB_OUTPUT"
+        else
+          echo "File: ${CONAN_CONTEXT_PATH} - Field '$FIELD' must be a map when defined."
+          exit 1
+        fi
+
     - name: 'Output Docker build configuration'
       id: generate-docker-config
       shell: bash
       run: |
         docker_config=$(yq -o=json '.docker // {}' "${CONAN_CONTEXT_PATH}" | jq -c)
         echo "config=${docker_config}" >> "$GITHUB_OUTPUT"
+
     - name: 'Upload conan context'
       uses: actions/upload-artifact@v6
       with:

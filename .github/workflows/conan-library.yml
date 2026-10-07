@@ -18,6 +18,11 @@ on:
         required: false
         type: boolean
         default: true
+      rebuild-target:
+        description: "Optional rebuild entry point"
+        required: false
+        type: string
+        default: ""
       enable-rebuild-context:
         description: 'Enable or not the rebuild of context'
         required: false
@@ -88,7 +93,9 @@ jobs:
     outputs:
       build-profile-list: ${{ steps.generate-conan-context.outputs.build-profile-list }}
       collectors-list: ${{ steps.generate-conan-context.outputs.collectors-list }}
+      collector-topology: ${{ steps.generate-conan-context.outputs.collector-topology }}
       docker-config: ${{ steps.generate-conan-context.outputs.docker-config }}
+
     steps:
       - uses: actions/checkout@v6
       - uses: $/.github/actions/generate-conan-context
@@ -636,17 +643,135 @@ jobs:
     if: inputs.build-missing == true && needs.collector-relevance.outputs.should-build != 'true'
     steps:
       - run: echo "Changed package is not present in the collector dependency graph for any configured profile. Skipping collector rebuild and context delivery."
-          
-  rebuild-collectors:
+
+  resolve-rebuild-collectors:
     runs-on: ubuntu-latest
-    if: always() && inputs.run-as-fast-build == false && inputs.enable-rebuild-collectors && needs.build-and-upload.result == 'success'
     needs:
       - generate-conan-context
       - build-and-upload
+    if: always() && inputs.run-as-fast-build == false && inputs.enable-rebuild-collectors && needs.build-and-upload.result == 'success'
+    outputs:
+      collectors-list: ${{ steps.resolve.outputs.collectors-list }}
+    steps:
+      - id: resolve
+        shell: bash
+        env:
+          COLLECTORS: ${{ needs.generate-conan-context.outputs.collectors-list }}
+          COLLECTOR_TOPOLOGY: ${{ needs.generate-conan-context.outputs.collector-topology }}
+          BUILD_MISSING: ${{ inputs.build-missing }}
+          CURRENT_REPOSITORY: ${{ github.repository }}
+          REBUILD_TARGET: ${{ inputs.rebuild-target }}
+        run: |
+          set -euo pipefail
+
+          # ONE COLLECTOR
+          if [ "$COLLECTOR_TOPOLOGY" = "{}" ] || [ -z "$COLLECTOR_TOPOLOGY" ]; then
+            echo "No collector topology configured."
+            echo "collectors-list=$COLLECTORS" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # COLLECTOR TOPOLOGY
+          # 1- Extract mapping info
+          echo "Resolving collector topology..."
+          # Build child -> parent lookup
+          PARENT_MAP=$(
+            echo "$COLLECTOR_TOPOLOGY" | jq -c '
+              reduce (
+                to_entries[]
+                | .key as $parent
+                | (.value.children // [])[]
+                | { child: ., parent: $parent }
+              ) as $e
+              ({}; .[$e.child] = $e.parent)
+            '
+          )
+          
+          # Find root collectors (collectors never referenced as children)
+          ROOTS=$(
+            echo "$COLLECTOR_TOPOLOGY" | jq -c '
+              . as $topology
+              | ($topology | keys) as $all
+              | ([ .[]?.children[]? ] | unique) as $children
+              | $all - $children
+            '
+          )
+          
+          # Build first-level collectors (children of all roots)
+          FIRST_LEVEL_COLLECTORS=$(
+            jq -cn \
+              --argjson topology "$COLLECTOR_TOPOLOGY" \
+              --argjson roots "$ROOTS" '
+                [
+                  $roots[]
+                  | $topology[.]
+                  | (.children // [])[]
+                ] | unique
+              '
+          )
+          
+          echo "Collector topology:"
+          echo "  Root collectors : $(echo "$ROOTS" | jq -c '.')"
+          echo "  Parent map      : $(echo "$PARENT_MAP" | jq -c '.')"
+
+          if [ "$(echo "$ROOTS" | jq 'length')" -ne 1 ]; then
+              echo "WARNING: Expected exactly one root collector, found:"
+              echo "$ROOTS" | jq .
+          fi
+          
+          # 2- Package (not a collector) - check next target
+          if [ "$BUILD_MISSING" != "true" ]; then
+            if  [ -n "$REBUILD_TARGET" ]; then
+                # Check if REBUILD_TARGET valid
+                if ! jq -e --arg target "$REBUILD_TARGET" \
+                  'has($target) or any(.[]?.children[]?; . == $target)' \
+                  <<< "$COLLECTOR_TOPOLOGY" >/dev/null; then
+                  echo "ERROR: Unknown rebuild target: $REBUILD_TARGET"
+                  exit 1
+                fi
+                # Use specified rebuild target when specified
+                selected=$(jq -cn --arg target "$REBUILD_TARGET" '[$target]')
+                echo "Using rebuild target collector: $REBUILD_TARGET"
+            else
+                selected="$FIRST_LEVEL_COLLECTORS"
+                echo "No rebuild target defined - using first-level collectors:"
+                echo "$FIRST_LEVEL_COLLECTORS" | jq .
+            fi
+            echo "collectors-list=$selected" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # 3- Package (collector) - check next target
+          parent=$(echo "$PARENT_MAP" | jq -r \
+            --arg current "$CURRENT_REPOSITORY" \
+            '.[$current] // empty')
+
+          if [ -n "$parent" ]; then
+            selected=$(jq -cn --arg parent "$parent" '[$parent]')
+            echo "Collector cascade: $CURRENT_REPOSITORY -> $parent"
+          else
+            selected='[]'
+            echo "Collector cascade complete: $CURRENT_REPOSITORY has no parent"
+          fi
+
+          echo "collectors-list=$selected" >> "$GITHUB_OUTPUT"
+
+  rebuild-collectors:
+    runs-on: ubuntu-latest
+    if: >-
+      always() &&
+      inputs.run-as-fast-build == false &&
+      inputs.enable-rebuild-collectors &&
+      needs.build-and-upload.result == 'success' &&
+      needs.resolve-rebuild-collectors.outputs.collectors-list != '[]'
+    needs:
+      - generate-conan-context
+      - build-and-upload
+      - resolve-rebuild-collectors
     strategy:
       fail-fast: false
       matrix:
-        collector: ${{ fromJson(needs.generate-conan-context.outputs.collectors-list) }}
+        collector: ${{ fromJson(needs.resolve-rebuild-collectors.outputs.collectors-list) }}
     env:
       TARGET_WORKFLOW: "rebuild.yml"
     steps:
@@ -695,10 +820,37 @@ jobs:
         with:
           append-key: package_context
 
+      - id: cascade-package-context
+        name: Resolve package source context for collector topology
+        if: needs.generate-conan-context.outputs.collector-topology != '{}'
+        shell: bash
+        env:
+          PACKAGE_CONTEXT: ${{ steps.package-context.outputs.context }}
+          SOURCE_BUILD_CONTEXT: ${{ inputs.source-build-context }}
+        run: |
+          if [ -n "$SOURCE_BUILD_CONTEXT" ]; then
+            CONTEXT="$SOURCE_BUILD_CONTEXT"
+            echo "Preserving source package context from collector cascade"
+          else
+            CONTEXT="$PACKAGE_CONTEXT"
+            echo "Starting collector topology from current package"
+          fi
+
+          echo "context=$CONTEXT" >> "$GITHUB_OUTPUT"
+
       - name: Dispatch workflow of ${{ matrix.collector }} on ${{ github.ref_name }}
+        env:
+          PACKAGE_CONTEXT: ${{ steps.package-context.outputs.context }}
+          CASCADE_CONTEXT: ${{ steps.cascade-package-context.outputs.context }}
         run: |
           SHORT_SHA=${GITHUB_SHA::7}
-          JSON='${{ steps.package-context.outputs.context }}'
+
+          if [ -n "$CASCADE_CONTEXT" ]; then
+            JSON="$CASCADE_CONTEXT"
+          else
+            JSON="$PACKAGE_CONTEXT"
+          fi
+
           echo "context pass $JSON"
           echo "command gh workflow run ${TARGET_WORKFLOW} --repo ${{ matrix.collector }} --ref ${{ github.ref_name }} --field source_build_context=$JSON --field built_package=$JSON"
           gh workflow run "${TARGET_WORKFLOW}" \
