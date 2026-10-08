@@ -68,6 +68,11 @@ on:
         required: false
         type: string
         default: ''
+      runner-type:
+        description: 'Runner of the build job: empty for the default EKS runner, or ec2-x64-spot, ec2-x64-ondemand, ec2-x64-ondemand-large, ec2-arm64-ondemand, ec2-arm64-ondemand-large'
+        required: false
+        type: string
+        default: ''
 
 
 env:
@@ -305,10 +310,81 @@ jobs:
             echo "should-build=false" >> "$GITHUB_OUTPUT"
             echo "relevant-profiles=[]" >> "$GITHUB_OUTPUT"
           fi
+
+  resolve-runner:
+    runs-on: ubuntu-latest
+    outputs:
+      platform: ${{ steps.resolve.outputs.platform }}
+      label: ${{ steps.resolve.outputs.label }}
+    steps:
+      - id: resolve
+        shell: bash
+        env:
+          INPUT_RUNNER_TYPE: ${{ inputs.runner-type }}
+          REPOSITORY_NAME: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+
+          case "${INPUT_RUNNER_TYPE}" in
+            "")
+              platform=eks
+              if [[ "${REPOSITORY_NAME,,}" == qt* ]]; then
+                label=eks-runner-linux-x64-large
+              else
+                label=eks-runner-linux-x64-medium
+              fi
+              ;;
+            ec2-x64-spot)
+              platform=ec2
+              label=ubuntu-24.04-internal
+              ;;
+            ec2-x64-ondemand)
+              platform=ec2
+              label=ubuntu-24.04-internal-ondemand
+              ;;
+            ec2-x64-ondemand-large)
+              platform=ec2
+              label=ubuntu-24.04-internal-ondemand-large
+              ;;
+            ec2-arm64-ondemand)
+              platform=ec2
+              label=ubuntu-24.04-arm-internal-ondemand
+              ;;
+            ec2-arm64-ondemand-large)
+              platform=ec2
+              label=ubuntu-24.04-arm-internal-ondemand-large
+              ;;
+            *)
+              echo "Unsupported runner-type '${INPUT_RUNNER_TYPE}'." >&2
+              echo "Supported values: <empty> (EKS), ec2-x64-spot, ec2-x64-ondemand, ec2-x64-ondemand-large, ec2-arm64-ondemand, ec2-arm64-ondemand-large" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "Runner type '${INPUT_RUNNER_TYPE}' resolved to ${platform} / ${label}"
+          echo "platform=${platform}" >> "$GITHUB_OUTPUT"
+          echo "label=${label}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Build runner"
+            echo ""
+            echo "Requested \`runner-type\`: \`${INPUT_RUNNER_TYPE:-<empty>}\` -> \`${label}\` (${platform})"
+            echo ""
+            echo "| \`runner-type\` | Runner label |"
+            echo "|---|---|"
+            echo "| *empty* (default) | \`eks-runner-linux-x64-medium\`, or \`-large\` for \`qt*\` repositories |"
+            echo "| \`ec2-x64-spot\` | \`ubuntu-24.04-internal\` |"
+            echo "| \`ec2-x64-ondemand\` | \`ubuntu-24.04-internal-ondemand\` |"
+            echo "| \`ec2-x64-ondemand-large\` | \`ubuntu-24.04-internal-ondemand-large\` |"
+            echo "| \`ec2-arm64-ondemand\` | \`ubuntu-24.04-arm-internal-ondemand\` |"
+            echo "| \`ec2-arm64-ondemand-large\` | \`ubuntu-24.04-arm-internal-ondemand-large\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   build-and-upload:
-    runs-on: ${{ startsWith(github.event.repository.name, 'qt') && 'eks-runner-linux-x64-large' || 'eks-runner-linux-x64-medium' }}
+    runs-on: ${{ needs.resolve-runner.outputs.label }}
     if: >-
       always() &&
+      needs.resolve-runner.outputs.platform == 'eks' &&
       needs.collector-relevance.outputs.should-build == 'true' && (
         inputs.conan-profiles != '' ||
         !inputs.run-unit-tests ||
@@ -318,6 +394,7 @@ jobs:
       - generate-conan-context
       - unit-tests
       - collector-relevance
+      - resolve-runner
     strategy:
       fail-fast: false
       matrix:
@@ -329,185 +406,94 @@ jobs:
         password: ${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
     steps:
       - uses: actions/checkout@v6
-      - name: Set safe git path
-        run: |
-          repo=$(basename ${{ github.repository }})
-          git config --global --add safe.directory "/__w/${repo}/${repo}"
-      - name: Prepare Conan context
-        shell: bash
-        run: |
-          if [ -n "${{ inputs.conan-context }}" ]; then
-            mkdir -p .conan-context
-            printf '%s\n' "${{ inputs.conan-context }}" > .conan-context/conan-context.yml
-          else
-            mkdir -p .conan-context
-          fi
-
-      - name: Download Conan context artifact
-        if: inputs.conan-context == ''
-        uses: actions/download-artifact@v8
+      - name: Build and upload ${{ matrix.profile }}
+        uses: $/.github/actions/conan-build-and-upload
         with:
-          name: conan-context
-          path: .conan-context
-      - name: Configure Conan
-        uses: $/.github/actions/configure-conan
-        with:
+          profile: ${{ matrix.profile }}
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
-
-      - name: Resolve Conan cache mode
-        run: |
-          context_cache_mode=$(yq e '.build.cache_mode // ""' "${CONAN_CONTEXT_PATH}")
-          if [ -z "$context_cache_mode" ] || [ "$context_cache_mode" = "null" ]; then
-            context_use_cache=$(yq e '.build.use_cache // .use_cache // false' "${CONAN_CONTEXT_PATH}")
-            if [ "$context_use_cache" = 'true' ]; then
-              context_cache_mode=recipes
-            else
-              context_cache_mode=none
-            fi
-          fi
-          case "$context_cache_mode" in
-            none|recipes|full)
-              echo "CACHE_MODE=$context_cache_mode" >> "$GITHUB_ENV"
-              ;;
-            *)
-              echo "Unsupported build.cache_mode: $context_cache_mode"
-              exit 1
-              ;;
-          esac
-
-      - name: Export GitHub context to environment
-        run: |
-          {
-            echo "RUN_ID=$GITHUB_RUN_ID"
-            echo "RUN_NUMBER=$GITHUB_RUN_NUMBER"
-            echo "RUN_ATTEMPT=$GITHUB_RUN_ATTEMPT"
-            echo "REPO=$GITHUB_REPOSITORY"
-            echo "OWNER=${GITHUB_REPOSITORY_OWNER}"
-            echo "SHA=$GITHUB_SHA"
-            echo "REF=$GITHUB_REF"
-            echo "ACTOR=$GITHUB_ACTOR"
-            echo "WORKFLOW=$GITHUB_WORKFLOW"
-          } >> "$GITHUB_ENV"
-
-      - name: Install pip packages for Conan recipes
-        shell: bash
-        run: |
-          set -euo pipefail
-          pkgs="semversioner ${{ inputs.extra-pip-packages }}"
-          echo "Installing pip packages: ${pkgs}"
-          venv=/tmp/conan-extra-pip
-          if python3 -m venv "${venv}"; then
-            "${venv}/bin/pip" install --disable-pip-version-check ${pkgs}
-            site="$("${venv}/bin/python" -c "import sysconfig; print(sysconfig.get_path('purelib'))")"
-            echo "PYTHONPATH=${site}${PYTHONPATH:+:${PYTHONPATH}}" >> "${GITHUB_ENV}"
-          else
-            # Compiler images may lack python3-venv; CI containers are disposable.
-            python3 -m pip install --disable-pip-version-check --break-system-packages ${pkgs}
-          fi
-
-      - name: Restore Conan build state
-        uses: $/.github/actions/restore-conan-build-state
-        with:
+          conan-context: ${{ inputs.conan-context }}
           source-build-context: ${{ inputs.source-build-context != '' && inputs.source-build-context || inputs.force-build }}
-          json-secrets: ${{ toJson(secrets) }}
-          profile: ${{ matrix.profile }}
-          cache-mode: ${{ env.CACHE_MODE }}
-          create-lockfile-command: conan lock create . --profile=${{ matrix.profile }} --lockfile-out=conan-lockfile.json
+          build-missing: ${{ inputs.build-missing }}
+          extra-pip-packages: ${{ inputs.extra-pip-packages }}
 
-      - name: Conan create
+  build-and-upload-ec2:
+    runs-on: ${{ needs.resolve-runner.outputs.label }}
+    if: >-
+      always() &&
+      needs.resolve-runner.outputs.platform == 'ec2' &&
+      needs.collector-relevance.outputs.should-build == 'true' && (
+        inputs.conan-profiles != '' ||
+        !inputs.run-unit-tests ||
+        needs.unit-tests.result == 'success'
+      )
+    needs:
+      - generate-conan-context
+      - unit-tests
+      - collector-relevance
+      - resolve-runner
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: ${{ fromJson(needs.collector-relevance.outputs.relevant-profiles) }}
+    steps:
+      - uses: actions/checkout@v6
+      # EC2 runners have no compiler image: Conan is installed here, jq, yq and gh must come with the runner image.
+      - name: Install Conan and verify workflow tools
         shell: bash
         env:
-          ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
+          CONAN_VERSION: "2.28.1"
         run: |
-          set -o pipefail
-          upload=$(yq e '.upload' "${CONAN_CONTEXT_PATH}")
-          if [ -z "${upload}" ] || [ "null" = "${upload}" ]; then
-            echo "Field upload is missing in ${CONAN_CONTEXT_PATH}"
-            echo "Please add it"
-            exit 1
-          else
-            echo "Conan upload to repository ${upload}"
-          fi
-          repo=$(basename ${{ github.repository }})
-          use_ripple_id=$(yq e '.use_ripple_id' "${CONAN_CONTEXT_PATH}")
-          if [ "${use_ripple_id}" = "true" ]; then
-               echo "USE_RIPPLE_ID=true" >> "$GITHUB_ENV"
-          fi
-          LOCK_OPTIONS=""
-          if [ "${{ inputs.build-missing }}" = "true" ]; then
-            # shellcheck disable=SC2086 # Split the generated sequence of -c options.
-            conan graph build-order . -pr:h "${{ matrix.profile }}" $CONAN_CONTEXT_CONF_ARGS --build=missing --format=json --reduce --order-by recipe -l conan-lockfile.json --lockfile-partial > "build-${{ matrix.profile }}.json"
-            jq -r '.order[][].ref' < "build-${{ matrix.profile }}.json" | while read -r ref; do
-              package_path="$(conan cache path "${ref}")"
-              url="$(yq -r '.url'  < "${package_path}/conandata.yml" )"
-              sha="$(yq -r '.sha'  < "${package_path}/conandata.yml" )"
-              bundle="$(yq -r '.bundle'  < "${package_path}/conandata.yml" )"
-              context=$(yq e '.bundle' "${CONAN_CONTEXT_PATH}")
-              if [ "${bundle}" !=  "${context}" ]; then
-                echo "need to rebuild a package ${ref} from another context ${bundle}"  
-                echo "Looks like ${bundle is broken}"
-                exit 1
-              fi
-              OWNER="${url#*//}"
-              OWNER="${OWNER#*/}"
-              OWNER="${OWNER%/*}"
-              echo "url $url sha $sha OWNER $OWNER"
-              OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
-              OWNER_GIT_TOKEN=$(printf '%s\n' "$ALL_SECRETS_JSON" | jq -r --arg name "$OWNER_GIT_TOKEN_SECRET" '.[$name]')
-              if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
-                 echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
-                 echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
-                 exit 1
-              else
-                 echo "Found secret ${OWNER_GIT_TOKEN_SECRET}"
-              fi
-              echo "${OWNER_GIT_TOKEN}" > mytoken.txt
-              gh auth login --with-token < mytoken.txt
-              rm mytoken.txt              
-              echo "extracting package name and version from $ref"
-              name="${ref%/*}"
-              prev="${ref#*/}"
-              prev="${prev%#*}"
-              gh repo clone "$url" "$name"
-              echo "name $name version $prev adding ripple build id"
-              version="${prev%+*}"
-              build="${prev#*+}"
-              build="${build%.*}"
-              echo "Ripple building ${name} from version ${version} build ${build} ...."
-              cd "${name}"
-              git reset --hard "$sha"
-              # Following command must exit if conan create fail because we've set on top of this script 'set -o pipefail'
-              # Please do not add any command behind '| tee conan_create.log' that could change the return code
-              # shellcheck disable=SC2086 # Split the generated sequence of -c options.
-              PREVIOUS_VERSION="${version}+${build}" conan create . -pr:h "${{ matrix.profile }}" $CONAN_CONTEXT_CONF_ARGS -l ../conan-lockfile.json --lockfile-partial 2>&1 | tee conan_create.log
-              cd ..
-              if [ ${{ github.event_name }} != 'pull_request' ]; then
-                conan upload -r "${upload}" "${name}" --confirm
-              fi  
-            done
-            LOCK_OPTIONS="--lockfile-partial"
-          fi  
-          # shellcheck disable=SC2086 # Split the generated sequence of -c options.
-          conan create . -pr:h "${{ matrix.profile }}" $CONAN_CONTEXT_CONF_ARGS -l conan-lockfile.json $LOCK_OPTIONS 2>&1 | tee conan_create.log
-          if [ ${{ github.event_name }} != 'pull_request' ]; then
-            conan upload -r "${upload}" "${repo}" --confirm
-          fi   
-
-      - if: ${{ inputs.build-missing }}
-        name: upload build packages list
-        uses: actions/upload-artifact@v6
-        with:
-          name: build-list-${{ matrix.profile }}
-          path: build-${{ matrix.profile }}.json
-          retention-days: 2
-
-      - if: ${{ github.event_name != 'pull_request' }}
-        name: Upload Conan build state
-        uses: $/.github/actions/upload-conan-build-state
+          python3 -m pip install --user "conan==${CONAN_VERSION}"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+          for tool in conan jq yq gh; do
+            if ! command -v "$tool" >/dev/null; then
+              echo "Missing required tool on the EC2 runner: $tool" >&2
+              exit 1
+            fi
+          done
+          conan --version
+      - name: Build and upload ${{ matrix.profile }}
+        uses: $/.github/actions/conan-build-and-upload
         with:
           profile: ${{ matrix.profile }}
-          cache-mode: ${{ env.CACHE_MODE }}
+          json-secrets: ${{ toJson(secrets) }}
+          conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
+          conan-context: ${{ inputs.conan-context }}
+          source-build-context: ${{ inputs.source-build-context != '' && inputs.source-build-context || inputs.force-build }}
+          build-missing: ${{ inputs.build-missing }}
+          extra-pip-packages: ${{ inputs.extra-pip-packages }}
+
+  build-result:
+    runs-on: ubuntu-latest
+    needs:
+      - build-and-upload
+      - build-and-upload-ec2
+    if: always()
+    outputs:
+      result: ${{ steps.result.outputs.result }}
+    steps:
+      - id: result
+        shell: bash
+        env:
+          EKS_RESULT: ${{ needs.build-and-upload.result }}
+          EC2_RESULT: ${{ needs.build-and-upload-ec2.result }}
+        run: |
+          # Only one of the two build jobs runs, the other one is skipped.
+          result=skipped
+          for job_result in "${EKS_RESULT}" "${EC2_RESULT}"; do
+            case "${job_result}" in
+              failure|cancelled)
+                result=failure
+                break
+                ;;
+              success)
+                result=success
+                ;;
+            esac
+          done
+          echo "result=${result}" >> "$GITHUB_OUTPUT"
 
   docker-profile-plan:
     runs-on: eks-runner-linux-x64-medium
@@ -565,7 +551,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - generate-conan-context
-      - build-and-upload
+      - build-result
       - docker-profile-plan
     # A delivery collector has been published and at least one of its profiles
     # is a Docker runtime. Feature/WIP builds must not dispatch an image build:
@@ -577,7 +563,7 @@ jobs:
       inputs.run-as-fast-build == false &&
       inputs.build-missing == true &&
       (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) &&
-      needs.build-and-upload.result == 'success' &&
+      needs.build-result.outputs.result == 'success' &&
       needs.docker-profile-plan.result == 'success' &&
       needs.docker-profile-plan.outputs.profiles != '[]'
     steps:
@@ -648,8 +634,8 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - generate-conan-context
-      - build-and-upload
-    if: always() && inputs.run-as-fast-build == false && inputs.enable-rebuild-collectors && needs.build-and-upload.result == 'success'
+      - build-result
+    if: always() && inputs.run-as-fast-build == false && inputs.enable-rebuild-collectors && needs.build-result.outputs.result == 'success'
     outputs:
       collectors-list: ${{ steps.resolve.outputs.collectors-list }}
     steps:
@@ -762,11 +748,11 @@ jobs:
       always() &&
       inputs.run-as-fast-build == false &&
       inputs.enable-rebuild-collectors &&
-      needs.build-and-upload.result == 'success' &&
+      needs.build-result.outputs.result == 'success' &&
       needs.resolve-rebuild-collectors.outputs.collectors-list != '[]'
     needs:
       - generate-conan-context
-      - build-and-upload
+      - build-result
       - resolve-rebuild-collectors
     strategy:
       fail-fast: false
@@ -863,8 +849,8 @@ jobs:
   rebuild-context:
     runs-on: ubuntu-latest
     needs: 
-      - build-and-upload
-    if: always() && inputs.run-as-fast-build == false && inputs.enable-rebuild-context && needs.build-and-upload.result == 'success'
+      - build-result
+    if: always() && inputs.run-as-fast-build == false && inputs.enable-rebuild-context && needs.build-result.outputs.result == 'success'
     steps:
       - uses: actions/download-artifact@v8
         with:

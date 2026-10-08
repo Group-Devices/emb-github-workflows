@@ -340,6 +340,38 @@ The target state is:
 - lockfile and optional cache restored from that chained context
 - legacy aliases removed once all consumers have migrated
 
+## Runner selection
+
+The build job of `conan-library.yml` runs on EKS runners inside the `<profile>-compiler` image by default.
+The optional `runner-type` input moves it to an EC2 runner instead.
+
+| `runner-type` | Runner label | Arch | Capacity |
+|---|---|---|---|
+| empty (default) | `eks-runner-linux-x64-medium`, or `-large` when the repository name starts with `qt` | x64 | EKS |
+| `ec2-x64-spot` | `ubuntu-24.04-internal` | x64 | spot |
+| `ec2-x64-ondemand` | `ubuntu-24.04-internal-ondemand` | x64 | on demand |
+| `ec2-x64-ondemand-large` | `ubuntu-24.04-internal-ondemand-large` | x64 | on demand |
+| `ec2-arm64-ondemand` | `ubuntu-24.04-arm-internal-ondemand` | arm64 | on demand |
+| `ec2-arm64-ondemand-large` | `ubuntu-24.04-arm-internal-ondemand-large` | arm64 | on demand |
+
+Rules:
+- any other value fails the `resolve-runner` job immediately instead of queueing forever
+- adding a runner means adding one case to the `resolve-runner` job of `conan-library.yml`
+- EC2 runners have no compiler image: the job installs Conan and expects `jq`, `yq` and `gh` in the runner image
+- `runner-type` applies to every profile of the call; use `conan-profiles` to split profiles over several calls
+- when `conan-profiles` is set, unit tests no longer gate the build
+
+Example for a package whose profiles all build on EC2 ARM64:
+
+```yaml
+jobs:
+  build:
+    uses: Group-Devices/emb-github-workflows/.github/workflows/conan-library.yml@release/v1.0
+    with:
+      runner-type: ec2-arm64-ondemand
+    secrets: inherit
+```
+
 ## Reusable Actions
 
 The repository also contains reusable helper actions used by the workflows.
@@ -358,5 +390,8 @@ The repository also contains reusable helper actions used by the workflows.
   - uploads the lockfile and optional Conan cache produced by a workflow run
 - `.github/actions/build-bundle-docs`
   - builds the generated documentation site used by context delivery
+- `.github/actions/conan-build-and-upload`
+  - configures Conan from the bundle context, runs `conan create` for one profile and uploads the package and its build state
+  - shared by the EKS and EC2 build jobs of `conan-library.yml`
 
 These actions exist to keep the reusable workflows focused on orchestration while moving repeated contracts and shell logic into versioned helpers.

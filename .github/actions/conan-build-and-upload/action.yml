@@ -1,0 +1,226 @@
+name: Conan Build And Upload
+description: "Configure Conan from the bundle context, build one profile with conan create and publish the package and its build state. Expects the repository to be checked out and conan, yq, jq and gh to be available."
+
+inputs:
+  profile:
+    description: Conan profile built by this invocation.
+    required: true
+  json-secrets:
+    description: Serialized GitHub secrets object.
+    required: true
+  conan-context-path:
+    description: Path of the Conan context file, inside the `.conan-context` directory.
+    required: true
+  conan-context:
+    description: Conan context plain text, used instead of the `conan-context` artifact when not empty.
+    required: false
+    default: ''
+  source-build-context:
+    description: Serialized source build context chain.
+    required: false
+    default: ''
+  build-missing:
+    description: Build the packages missing from the lockfile graph first (`true` or `false`).
+    required: false
+    default: 'false'
+  extra-pip-packages:
+    description: Space-separated extra pip packages installed before Conan lock/create (semversioner is always installed).
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Set safe git path
+      shell: bash
+      run: git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+
+    - name: Prepare Conan context
+      shell: bash
+      env:
+        CONAN_CONTEXT_PATH: ${{ inputs.conan-context-path }}
+        INPUT_CONAN_CONTEXT: ${{ inputs.conan-context }}
+      run: |
+        mkdir -p .conan-context
+        if [ -n "${INPUT_CONAN_CONTEXT}" ]; then
+          printf '%s\n' "${INPUT_CONAN_CONTEXT}" > "${CONAN_CONTEXT_PATH}"
+        fi
+
+    - name: Download Conan context artifact
+      if: ${{ inputs.conan-context == '' }}
+      uses: actions/download-artifact@v8
+      with:
+        name: conan-context
+        path: .conan-context
+
+    - name: Configure Conan
+      uses: $/.github/actions/configure-conan
+      with:
+        json-secrets: ${{ inputs.json-secrets }}
+        conan-context-path: ${{ inputs.conan-context-path }}
+
+    - id: cache-mode
+      name: Resolve Conan cache mode
+      shell: bash
+      env:
+        CONAN_CONTEXT_PATH: ${{ inputs.conan-context-path }}
+      run: |
+        context_cache_mode=$(yq e '.build.cache_mode // ""' "${CONAN_CONTEXT_PATH}")
+        if [ -z "$context_cache_mode" ] || [ "$context_cache_mode" = "null" ]; then
+          context_use_cache=$(yq e '.build.use_cache // .use_cache // false' "${CONAN_CONTEXT_PATH}")
+          if [ "$context_use_cache" = 'true' ]; then
+            context_cache_mode=recipes
+          else
+            context_cache_mode=none
+          fi
+        fi
+        case "$context_cache_mode" in
+          none|recipes|full)
+            echo "mode=$context_cache_mode" >> "$GITHUB_OUTPUT"
+            ;;
+          *)
+            echo "Unsupported build.cache_mode: $context_cache_mode"
+            exit 1
+            ;;
+        esac
+
+    - name: Export GitHub context to environment
+      shell: bash
+      run: |
+        {
+          echo "RUN_ID=$GITHUB_RUN_ID"
+          echo "RUN_NUMBER=$GITHUB_RUN_NUMBER"
+          echo "RUN_ATTEMPT=$GITHUB_RUN_ATTEMPT"
+          echo "REPO=$GITHUB_REPOSITORY"
+          echo "OWNER=${GITHUB_REPOSITORY_OWNER}"
+          echo "SHA=$GITHUB_SHA"
+          echo "REF=$GITHUB_REF"
+          echo "ACTOR=$GITHUB_ACTOR"
+          echo "WORKFLOW=$GITHUB_WORKFLOW"
+        } >> "$GITHUB_ENV"
+
+    - name: Install pip packages for Conan recipes
+      shell: bash
+      env:
+        EXTRA_PIP_PACKAGES: ${{ inputs.extra-pip-packages }}
+      run: |
+        set -euo pipefail
+        pkgs="semversioner ${EXTRA_PIP_PACKAGES}"
+        echo "Installing pip packages: ${pkgs}"
+        venv=/tmp/conan-extra-pip
+        if python3 -m venv "${venv}"; then
+          # shellcheck disable=SC2086 # Split the package list.
+          "${venv}/bin/pip" install --disable-pip-version-check ${pkgs}
+          site="$("${venv}/bin/python" -c "import sysconfig; print(sysconfig.get_path('purelib'))")"
+          echo "PYTHONPATH=${site}${PYTHONPATH:+:${PYTHONPATH}}" >> "${GITHUB_ENV}"
+        else
+          # Compiler images may lack python3-venv; CI containers are disposable.
+          # shellcheck disable=SC2086 # Split the package list.
+          python3 -m pip install --disable-pip-version-check --break-system-packages ${pkgs}
+        fi
+
+    - name: Restore Conan build state
+      uses: $/.github/actions/restore-conan-build-state
+      with:
+        source-build-context: ${{ inputs.source-build-context }}
+        json-secrets: ${{ inputs.json-secrets }}
+        profile: ${{ inputs.profile }}
+        cache-mode: ${{ steps.cache-mode.outputs.mode }}
+        create-lockfile-command: conan lock create . --profile=${{ inputs.profile }} --lockfile-out=conan-lockfile.json
+
+    - name: Conan create
+      shell: bash
+      env:
+        CONAN_CONTEXT_PATH: ${{ inputs.conan-context-path }}
+        ALL_SECRETS_JSON: ${{ inputs.json-secrets }}
+        PROFILE: ${{ inputs.profile }}
+        BUILD_MISSING: ${{ inputs.build-missing }}
+      run: |
+        set -o pipefail
+        upload=$(yq e '.upload' "${CONAN_CONTEXT_PATH}")
+        if [ -z "${upload}" ] || [ "null" = "${upload}" ]; then
+          echo "Field upload is missing in ${CONAN_CONTEXT_PATH}"
+          echo "Please add it"
+          exit 1
+        else
+          echo "Conan upload to repository ${upload}"
+        fi
+        repo=$(basename "${GITHUB_REPOSITORY}")
+        use_ripple_id=$(yq e '.use_ripple_id' "${CONAN_CONTEXT_PATH}")
+        if [ "${use_ripple_id}" = "true" ]; then
+             echo "USE_RIPPLE_ID=true" >> "$GITHUB_ENV"
+        fi
+        LOCK_OPTIONS=""
+        if [ "${BUILD_MISSING}" = "true" ]; then
+          # shellcheck disable=SC2086 # Split the generated sequence of -c options.
+          conan graph build-order . -pr:h "${PROFILE}" $CONAN_CONTEXT_CONF_ARGS --build=missing --format=json --reduce --order-by recipe -l conan-lockfile.json --lockfile-partial > "build-${PROFILE}.json"
+          jq -r '.order[][].ref' < "build-${PROFILE}.json" | while read -r ref; do
+            package_path="$(conan cache path "${ref}")"
+            url="$(yq -r '.url'  < "${package_path}/conandata.yml" )"
+            sha="$(yq -r '.sha'  < "${package_path}/conandata.yml" )"
+            bundle="$(yq -r '.bundle'  < "${package_path}/conandata.yml" )"
+            context=$(yq e '.bundle' "${CONAN_CONTEXT_PATH}")
+            if [ "${bundle}" !=  "${context}" ]; then
+              echo "need to rebuild a package ${ref} from another context ${bundle}"
+              echo "Looks like ${bundle} is broken"
+              exit 1
+            fi
+            OWNER="${url#*//}"
+            OWNER="${OWNER#*/}"
+            OWNER="${OWNER%/*}"
+            echo "url $url sha $sha OWNER $OWNER"
+            OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+            OWNER_GIT_TOKEN=$(printf '%s\n' "$ALL_SECRETS_JSON" | jq -r --arg name "$OWNER_GIT_TOKEN_SECRET" '.[$name]')
+            if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
+               echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
+               echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
+               exit 1
+            else
+               echo "Found secret ${OWNER_GIT_TOKEN_SECRET}"
+            fi
+            echo "${OWNER_GIT_TOKEN}" > mytoken.txt
+            gh auth login --with-token < mytoken.txt
+            rm mytoken.txt
+            echo "extracting package name and version from $ref"
+            name="${ref%/*}"
+            prev="${ref#*/}"
+            prev="${prev%#*}"
+            gh repo clone "$url" "$name"
+            echo "name $name version $prev adding ripple build id"
+            version="${prev%+*}"
+            build="${prev#*+}"
+            build="${build%.*}"
+            echo "Ripple building ${name} from version ${version} build ${build} ...."
+            cd "${name}"
+            git reset --hard "$sha"
+            # Following command must exit if conan create fail because we've set on top of this script 'set -o pipefail'
+            # Please do not add any command behind '| tee conan_create.log' that could change the return code
+            # shellcheck disable=SC2086 # Split the generated sequence of -c options.
+            PREVIOUS_VERSION="${version}+${build}" conan create . -pr:h "${PROFILE}" $CONAN_CONTEXT_CONF_ARGS -l ../conan-lockfile.json --lockfile-partial 2>&1 | tee conan_create.log
+            cd ..
+            if [ "${GITHUB_EVENT_NAME}" != 'pull_request' ]; then
+              conan upload -r "${upload}" "${name}" --confirm
+            fi
+          done
+          LOCK_OPTIONS="--lockfile-partial"
+        fi
+        # shellcheck disable=SC2086 # Split the generated sequence of -c options.
+        conan create . -pr:h "${PROFILE}" $CONAN_CONTEXT_CONF_ARGS -l conan-lockfile.json $LOCK_OPTIONS 2>&1 | tee conan_create.log
+        if [ "${GITHUB_EVENT_NAME}" != 'pull_request' ]; then
+          conan upload -r "${upload}" "${repo}" --confirm
+        fi
+
+    - if: ${{ inputs.build-missing == 'true' }}
+      name: Upload build packages list
+      uses: actions/upload-artifact@v6
+      with:
+        name: build-list-${{ inputs.profile }}
+        path: build-${{ inputs.profile }}.json
+        retention-days: 2
+
+    - if: ${{ github.event_name != 'pull_request' }}
+      name: Upload Conan build state
+      uses: $/.github/actions/upload-conan-build-state
+      with:
+        profile: ${{ inputs.profile }}
+        cache-mode: ${{ steps.cache-mode.outputs.mode }}
