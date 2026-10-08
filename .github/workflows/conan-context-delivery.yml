@@ -648,6 +648,8 @@ jobs:
               fi
               echo "${OWNER_GIT_TOKEN}" > mytoken.txt
               gh auth login --with-token < mytoken.txt
+              echo "GitHub identity used by release token:"
+              gh api user --jq '.login'
               rm mytoken.txt
               AUTHENTICATED_OWNER="${OWNER}"
             else
