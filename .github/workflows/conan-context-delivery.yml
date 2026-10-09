@@ -211,6 +211,7 @@ jobs:
               echo "productPublish.raw.repository must be defined when RAW publication is enabled"
               exit 1
             fi
+          fi
 
           echo "!!!! deliverable=$deliverable / product_name=$product_name !!!!!!"
 
