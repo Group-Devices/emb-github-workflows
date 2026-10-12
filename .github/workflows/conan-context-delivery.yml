@@ -194,30 +194,33 @@ jobs:
 
           apt_enabled=false
           raw_enabled=false
-          raw_repository=""
 
+          # Determine the repositories to upload deliverable artifacts
           if [ "${deliverable}" = "true" ]; then
+            # apt repository - get upload repo enable status
             apt_enabled=$(yq -r '.productPublish.apt.enabled' "${CONAN_CONTEXT_PATH}")
             if [ "${apt_enabled}" = "null" ] || [ -z "${apt_enabled}" ]; then
               apt_enabled=true
             fi
 
+            # raw repository - get upload repo enable status + configuration
             raw_enabled=$(yq -r '.productPublish.raw.enabled // false' "${CONAN_CONTEXT_PATH}")
             raw_publish_cfg_path=".productPublish.raw.publish_cfg"
             raw_repository=$(yq -r "${raw_publish_cfg_path}.repository // \"\"" "${CONAN_CONTEXT_PATH}")
-
-            if [ "${raw_enabled}" = "true" ] && [ -z "${raw_repository}" ]; then
-              echo "productPublish.raw.publish_cfg.repository must be defined when RAW publication is enabled"
-              exit 1
-            fi
-
             artifact_patterns=$(yq -r "${raw_publish_cfg_path}.artifactPatterns[]" "${CONAN_CONTEXT_PATH}" 2>/dev/null || true)
 
-            if [ "${raw_enabled}" = "true" ] && [ -z "${artifact_patterns}" ]; then
-              echo "productPublish.raw.publish_cfg.artifactPatterns must be defined when RAW publication is enabled"
-              exit 1
-            fi
+            if [ "${raw_enabled}" = "true" ];then
+              # Check for inconsistent raw repo configuration
+              if [ -z "${raw_repository}" ]; then
+                echo "productPublish.raw.publish_cfg.repository must be defined when RAW publication is enabled"
+                exit 1
+              fi
 
+              if [ -z "${artifact_patterns}" ]; then
+                echo "productPublish.raw.publish_cfg.artifactPatterns must be defined when RAW publication is enabled"
+                exit 1
+              fi
+            fi
           fi
 
           echo "!!!! deliverable=$deliverable / product_name=$product_name !!!!!!"
@@ -655,8 +658,6 @@ jobs:
               fi
               echo "${OWNER_GIT_TOKEN}" > mytoken.txt
               gh auth login --with-token < mytoken.txt
-              echo "GitHub identity used by release token:"
-              gh api user --jq '.login'
               rm mytoken.txt
               AUTHENTICATED_OWNER="${OWNER}"
             else
@@ -787,27 +788,30 @@ jobs:
           # Expand artifact patterns from the publish configuration
           yq -r "${raw_publish_cfg_path}.artifactPatterns[]" "${CONAN_CONTEXT_PATH}" > tmp_artifact_patterns
       
+          # Loop over artifact patterns defined in conan context 
           while IFS= read -r artifact_pattern; do
+            # Search in conan package if a file matching this patterns exists
             echo "Searching artifacts matching '${artifact_pattern}'"
             for artifact in ./to_apt/${artifact_pattern}; do
-               [ -f "${artifact}" ] || continue
+              # Skip if this pattern doesn't match any artifact in conan package
+              [ -f "${artifact}" ] || continue
 
+              # Artifact exists in conan package check if it exists already in repo
               artifact_name=$(basename "${artifact}")
               url="${NEXUS_URL}/repository/${raw_repository}/${raw_path}/${artifact_name}"
               remote_file=$(mktemp)
 
               echo "Checking ${artifact_name}"
-
               http_code=$(curl -s -o "${remote_file}" -w "%{http_code}" \
                 -u "${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}:${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}" \
                 "${url}")
 
               if [ "${http_code}" = "200" ]; then
+                # Artifact already exists check if content the same and perform upload depending on collision policy
                 local_sha=$(sha256sum "${artifact}" | awk '{print $1}')
                 remote_sha=$(sha256sum "${remote_file}" | awk '{print $1}')
 
                 echo "Artifact ${artifact_name} already exists - local_sha=${local_sha} remote_sha=${remote_sha}"
-
                 if [ "${local_sha}" != "${remote_sha}" ]; then
                   echo "Artifact already exists but content differs"
                   case "${raw_collision_policy}" in
@@ -830,7 +834,6 @@ jobs:
                   rm -f "${remote_file}"
                   continue
                 fi
-
               elif [ "${http_code}" = "404" ]; then
                 echo "${artifact_name} does not exist yet"
               else
@@ -838,9 +841,9 @@ jobs:
                 rm -f "${remote_file}"
                 exit 1
               fi
-          
               rm -f "${remote_file}"
-          
+ 
+              # Upload artifact in raw repo
               echo "Uploading ${artifact_name} to ${raw_repository}/${raw_path}"
               curl --fail \
                 -u "${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}:${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}" \
