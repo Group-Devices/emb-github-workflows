@@ -81,7 +81,7 @@ jobs:
       product_name: ${{ steps.generate-delivery.outputs.product_name }}
       apt_enabled: ${{ steps.generate-delivery.outputs.apt_enabled }}
       raw_enabled: ${{ steps.generate-delivery.outputs.raw_enabled }}
-      raw_repository: ${{ steps.generate-delivery.outputs.raw_repository }}
+      raw_publish_cfg_path: ${{ steps.generate-delivery.outputs.raw_publish_cfg_path }}
       from_repository_url: ${{ steps.generate-release-info.outputs.from_repository_url }}
       release_name: ${{ steps.generate-release-info.outputs.release_name }}
       conan_release_remote_name: ${{ steps.generate-release-info.outputs.conan_release_remote_name }}
@@ -133,22 +133,23 @@ jobs:
             deliverable="true"
           fi
 
+          apt_enabled=false
+          raw_enabled=false
+          raw_publish_cfg_path=""
+
           if [ "${deliverable}" = "true" ]; then
             apt_enabled=$(yq -r '.productPublish.apt.enabled' "${CONAN_CONTEXT_PATH}")
             if [ "${apt_enabled}" = "null" ] || [ -z "${apt_enabled}" ]; then
               apt_enabled=true
             fi
             raw_enabled=$(yq -r '.productPublish.raw.enabled // false' "${CONAN_CONTEXT_PATH}")
-            raw_repository=$(yq -r '.productPublish.raw.repository // ""' "${CONAN_CONTEXT_PATH}")
+            raw_publish_cfg_path=".productPublish.raw.publish_cfg"
+            raw_repository=$(yq -r "${raw_publish_cfg_path}.repository // \"\"" "${CONAN_CONTEXT_PATH}")
 
             if [ "${raw_enabled}" = "true" ] && [ -z "${raw_repository}" ]; then
-              echo "productPublish.raw.repository must be defined when RAW publication is enabled"
+              echo "productPublish.raw.publish_cfg.repository must be defined when RAW publication is enabled"
               exit 1
             fi
-          else
-            apt_enabled=false
-            raw_enabled=false
-            raw_repository=""
           fi
 
           echo "!!!! deliverable=$deliverable / product_name=$product_name !!!!!!"

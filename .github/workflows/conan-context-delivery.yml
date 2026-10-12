@@ -194,6 +194,7 @@ jobs:
 
           apt_enabled=false
           raw_enabled=false
+          raw_publish_cfg_path=""
 
           # Determine the repositories to upload deliverable artifacts
           if [ "${deliverable}" = "true" ]; then
