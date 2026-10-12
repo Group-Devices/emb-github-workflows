@@ -346,7 +346,7 @@ jobs:
               # shellcheck disable=SC2086
               if [ "${{needs.extract-collectors.outputs.deliverable}}" = 'true' ]; then
                 # shellcheck disable=SC2086
-                ${{ env.CONAN }} install ${requires} -pr:h "${profile}" --deployer delivery --deployer-folder=to_apt
+                ${{ env.CONAN }} install ${requires} -pr:h "${profile}" --deployer delivery --deployer-folder=to_delivery
               fi
           done < tmp_input;
           # Keep only bundle package ( i.e dep from cahce present in the "main" remote )
@@ -407,7 +407,7 @@ jobs:
       - name: Upload apt delivery
         if: needs.extract-collectors.outputs.apt_enabled == 'true'
         run: |
-            for deb in ./to_apt/*.deb; do
+            for deb in ./to_delivery/*.deb; do
               [ -f "$deb" ] || continue
               echo "uploading ${deb}"
               curl --fail -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.GROUP_REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \

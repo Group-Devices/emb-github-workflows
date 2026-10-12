@@ -619,7 +619,7 @@ jobs:
           ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" $CONAN_CONTEXT_CONF_ARGS --deployer release --deployer-folder=to_conan
           if [ "${{needs.extract-collectors.outputs.deliverable}}" = 'true' ]; then
             # shellcheck disable=SC2086 # Split the generated sequence of -c options.
-            ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" $CONAN_CONTEXT_CONF_ARGS --deployer delivery --deployer-folder=to_apt
+            ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" $CONAN_CONTEXT_CONF_ARGS --deployer delivery --deployer-folder=to_delivery
           fi
           ${{ env.CONAN }} remote enable "${{ needs.extract-collectors.outputs.conan_release_remote_name}}"
 
@@ -769,7 +769,7 @@ jobs:
       - name: Upload apt delivery
         if: needs.extract-collectors.outputs.apt_enabled == 'true'
         run: |
-            for deb in ./to_apt/*.deb; do
+            for deb in ./to_delivery/*.deb; do
               [ -f "$deb" ] || continue
               echo "uploading ${deb} to ${NEXUS_URL}/repository/${{ needs.repositories-preparation.outputs.apt-repo-name }}"
               curl --fail -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}" \
@@ -793,7 +793,7 @@ jobs:
           while IFS= read -r artifact_pattern; do
             # Search in conan package if a file matching this patterns exists
             echo "Searching artifacts matching '${artifact_pattern}'"
-            for artifact in ./to_apt/${artifact_pattern}; do
+            for artifact in ./to_delivery/${artifact_pattern}; do
               # Skip if this pattern doesn't match any artifact in conan package
               [ -f "${artifact}" ] || continue
 
@@ -866,7 +866,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: packages-delivery-${{ matrix.profile }}
-          path: ./to_apt/packages.json
+          path: ./to_delivery/packages.json
           retention-days: 2
 
 
