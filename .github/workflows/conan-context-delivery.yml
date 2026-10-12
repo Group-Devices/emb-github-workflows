@@ -140,8 +140,7 @@ jobs:
       product_name: ${{ steps.generate-delivery.outputs.product_name }}
       apt_enabled: ${{ steps.generate-delivery.outputs.apt_enabled }}
       raw_enabled: ${{ steps.generate-delivery.outputs.raw_enabled }}
-      raw_repository: ${{ steps.generate-delivery.outputs.raw_repository }}
-      raw_collision_policy: ${{ steps.generate-delivery.outputs.raw_collision_policy }}
+      raw_publish_cfg_path: ${{ steps.generate-delivery.outputs.raw_publish_cfg_path }}
       from_repository_url: ${{ steps.generate-release-info.outputs.from_repository_url }}
       release_name: ${{ steps.generate-release-info.outputs.release_name }}
       conan_release_remote_name: ${{ steps.generate-release-info.outputs.conan_release_remote_name }}
@@ -196,21 +195,29 @@ jobs:
           apt_enabled=false
           raw_enabled=false
           raw_repository=""
-          raw_collision_policy="fail"
 
           if [ "${deliverable}" = "true" ]; then
             apt_enabled=$(yq -r '.productPublish.apt.enabled' "${CONAN_CONTEXT_PATH}")
             if [ "${apt_enabled}" = "null" ] || [ -z "${apt_enabled}" ]; then
               apt_enabled=true
             fi
+
             raw_enabled=$(yq -r '.productPublish.raw.enabled // false' "${CONAN_CONTEXT_PATH}")
-            raw_repository=$(yq -r '.productPublish.raw.repository // ""' "${CONAN_CONTEXT_PATH}")
-            raw_collision_policy=$(yq -r '.productPublish.raw.collisionPolicy // "fail"' "${CONAN_CONTEXT_PATH}")
+            raw_publish_cfg_path=".productPublish.raw.publish_cfg"
+            raw_repository=$(yq -r "${raw_publish_cfg_path}.repository // \"\"" "${CONAN_CONTEXT_PATH}")
 
             if [ "${raw_enabled}" = "true" ] && [ -z "${raw_repository}" ]; then
-              echo "productPublish.raw.repository must be defined when RAW publication is enabled"
+              echo "productPublish.raw.publish_cfg.repository must be defined when RAW publication is enabled"
               exit 1
             fi
+
+            artifact_patterns=$(yq -r "${raw_publish_cfg_path}.artifactPatterns[]" "${CONAN_CONTEXT_PATH}" 2>/dev/null || true)
+
+            if [ "${raw_enabled}" = "true" ] && [ -z "${artifact_patterns}" ]; then
+              echo "productPublish.raw.publish_cfg.artifactPatterns must be defined when RAW publication is enabled"
+              exit 1
+            fi
+
           fi
 
           echo "!!!! deliverable=$deliverable / product_name=$product_name !!!!!!"
@@ -219,8 +226,7 @@ jobs:
           echo "product_name=$product_name" >> "$GITHUB_OUTPUT"
           echo "apt_enabled=$apt_enabled" >> "$GITHUB_OUTPUT"
           echo "raw_enabled=$raw_enabled" >> "$GITHUB_OUTPUT"
-          echo "raw_repository=$raw_repository" >> "$GITHUB_OUTPUT"
-          echo "raw_collision_policy=${raw_collision_policy}" >> "$GITHUB_OUTPUT"
+          echo "raw_publish_cfg_path=${raw_publish_cfg_path}" >> "$GITHUB_OUTPUT"
 
       - name: Extract release info
         id: generate-release-info
@@ -330,7 +336,6 @@ jobs:
         shell: bash
         run: |
           product_name="${{ needs.extract-collectors.outputs.product_name }}"
-          raw_repository="${{ needs.extract-collectors.outputs.raw_repository }}"
 
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             raw_delivery_name="${product_name}-v${GITHUB_REF_NAME}"
@@ -345,9 +350,7 @@ jobs:
 
           raw_path="${product_name}/${raw_delivery_name}"
 
-          echo "RAW repository: ${raw_repository}"
           echo "RAW path: ${raw_path}"
-
           echo "raw_path=${raw_path}" >> "$GITHUB_OUTPUT"
 
       - name: Ensure apt repository exists
@@ -775,69 +778,77 @@ jobs:
       - name: Upload raw delivery
         if: needs.extract-collectors.outputs.raw_enabled == 'true'
         run: |
-          raw_repository="${{ needs.extract-collectors.outputs.raw_repository }}"
           raw_path="${{ needs.repositories-preparation.outputs.raw-path }}"
-          raw_collision_policy="${{ needs.extract-collectors.outputs.raw_collision_policy }}"
-      
-          for deb in ./to_apt/*.deb; do
-            [ -f "$deb" ] || continue
+          raw_publish_cfg_path="${{ needs.extract-collectors.outputs.raw_publish_cfg_path }}"
 
-            filename=$(basename "$deb")
-            url="${NEXUS_URL}/repository/${raw_repository}/${raw_path}/${filename}"
-            remote_file=$(mktemp)
+          raw_repository=$(yq -r "${raw_publish_cfg_path}.repository // \"\"" "${CONAN_CONTEXT_PATH}")
+          raw_collision_policy=$(yq -r "${raw_publish_cfg_path}.collisionPolicy // \"fail\"" "${CONAN_CONTEXT_PATH}")
+          
+          # Expand artifact patterns from the publish configuration
+          yq -r "${raw_publish_cfg_path}.artifactPatterns[]" "${CONAN_CONTEXT_PATH}" > tmp_artifact_patterns
       
-            echo "Checking ${filename}"
-      
-            http_code=$(curl -s -o "${remote_file}" -w "%{http_code}" \
-              -u "${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}:${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}" \
-              "${url}")
-      
-            if [ "${http_code}" = "200" ]; then
-              local_sha=$(sha256sum "${deb}" | awk '{print $1}')
-              remote_sha=$(sha256sum "${remote_file}" | awk '{print $1}')
-      
-              echo "Artifact ${filename} already exists - local_sha=${local_sha} remote_sha=${remote_sha}"
-      
-              if [ "${local_sha}" != "${remote_sha}" ]; then
-                echo "Artifact already exists but content differs"
-                case "${raw_collision_policy}" in
-                  overwrite)
-                    echo "INFO: Collision policy is 'overwrite', uploading artifact"
-                    ;;
-                  warning)
-                    echo "WARNING: Collision policy is 'warning', skipping artifact"
-                    rm -f "${remote_file}"
-                    continue
-                    ;;
-                  *)
-                    echo "ERROR: publication aborted because collision policy is 'fail' or unknown"
-                    rm -f "${remote_file}"
-                    exit 1
-                    ;;
-                esac
+          while IFS= read -r artifact_pattern; do
+            echo "Searching artifacts matching '${artifact_pattern}'"
+            for artifact in ./to_apt/${artifact_pattern}; do
+               [ -f "${artifact}" ] || continue
+
+              artifact_name=$(basename "${artifact}")
+              url="${NEXUS_URL}/repository/${raw_repository}/${raw_path}/${artifact_name}"
+              remote_file=$(mktemp)
+
+              echo "Checking ${artifact_name}"
+
+              http_code=$(curl -s -o "${remote_file}" -w "%{http_code}" \
+                -u "${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}:${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}" \
+                "${url}")
+
+              if [ "${http_code}" = "200" ]; then
+                local_sha=$(sha256sum "${artifact}" | awk '{print $1}')
+                remote_sha=$(sha256sum "${remote_file}" | awk '{print $1}')
+
+                echo "Artifact ${artifact_name} already exists - local_sha=${local_sha} remote_sha=${remote_sha}"
+
+                if [ "${local_sha}" != "${remote_sha}" ]; then
+                  echo "Artifact already exists but content differs"
+                  case "${raw_collision_policy}" in
+                    overwrite)
+                      echo "INFO: Collision policy is 'overwrite', uploading artifact"
+                      ;;
+                    warning)
+                      echo "WARNING: Collision policy is 'warning', skipping artifact"
+                      rm -f "${remote_file}"
+                      continue
+                      ;;
+                    *)
+                      echo "ERROR: publication aborted because collision policy is 'fail' or unknown"
+                      rm -f "${remote_file}"
+                      exit 1
+                      ;;
+                  esac
+                else
+                  echo "Artifact already exists with identical content - Skipping"
+                  rm -f "${remote_file}"
+                  continue
+                fi
+
+              elif [ "${http_code}" = "404" ]; then
+                echo "${artifact_name} does not exist yet"
               else
-                echo "Artifact already exists with identical content - Skipping"
+                echo "Failed to check ${artifact_name}: HTTP ${http_code}"
                 rm -f "${remote_file}"
-                continue
+                exit 1
               fi
-
-            elif [ "${http_code}" = "404" ]; then
-              echo "${filename} does not exist yet"
-            else
-              echo "Failed to check ${filename}: HTTP ${http_code}"
+          
               rm -f "${remote_file}"
-              exit 1
-            fi
-
-            rm -f "${remote_file}"
-
-            echo "Uploading ${filename} to ${raw_repository}/${raw_path}"
-            curl --fail \
-              -u "${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}:${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}" \
-              --upload-file "${deb}" \
-              "${url}"
-          done
-
+          
+              echo "Uploading ${artifact_name} to ${raw_repository}/${raw_path}"
+              curl --fail \
+                -u "${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}:${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}" \
+                --upload-file "${artifact}" \
+                "${url}"
+            done
+          done < tmp_artifact_patterns
+          rm -f tmp_artifact_patterns
 
       - name: 'Upload bundle release packages contents'
         uses: actions/upload-artifact@v6
