@@ -158,7 +158,7 @@ jobs:
           echo "product_name=$product_name" >> "$GITHUB_OUTPUT"
           echo "apt_enabled=$apt_enabled" >> "$GITHUB_OUTPUT"
           echo "raw_enabled=$raw_enabled" >> "$GITHUB_OUTPUT"
-          echo "raw_repository=$raw_repository" >> "$GITHUB_OUTPUT"
+          echo "raw_publish_cfg_path=${raw_publish_cfg_path}" >> "$GITHUB_OUTPUT"
 
       - name: Extract release info
         id: generate-release-info
