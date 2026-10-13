@@ -618,8 +618,15 @@ jobs:
           # shellcheck disable=SC2086 # Split the generated sequence of -c options.
           ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" $CONAN_CONTEXT_CONF_ARGS --deployer release --deployer-folder=to_conan
           if [ "${{needs.extract-collectors.outputs.deliverable}}" = 'true' ]; then
+            delivery_conf_args=""
+            # Pass additional delivery artifact patterns to the Conan deployer
+            if [ "${{ needs.extract-collectors.outputs.raw_enabled }}" = "true" ]; then
+                raw_publish_cfg_path="${{ needs.extract-collectors.outputs.raw_publish_cfg_path }}"
+                delivery_patterns=$(yq -r "${raw_publish_cfg_path}.artifactPatterns[]" "${CONAN_CONTEXT_PATH}" | paste -sd ';' -)
+                delivery_conf_args="-c user.delivery:artifact_patterns=${delivery_patterns}"
+            fi
             # shellcheck disable=SC2086 # Split the generated sequence of -c options.
-            ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" $CONAN_CONTEXT_CONF_ARGS --deployer delivery --deployer-folder=to_delivery
+            ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" $CONAN_CONTEXT_CONF_ARGS $delivery_conf_args --deployer delivery --deployer-folder=to_delivery
           fi
           ${{ env.CONAN }} remote enable "${{ needs.extract-collectors.outputs.conan_release_remote_name}}"
 
