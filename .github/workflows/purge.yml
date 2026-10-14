@@ -79,6 +79,9 @@ jobs:
       build-profiles-list: ${{ steps.generate-build-profiles-list.outputs.list }}
       deliverable: ${{ steps.generate-delivery.outputs.deliverable }}
       product_name: ${{ steps.generate-delivery.outputs.product_name }}
+      apt_enabled: ${{ steps.generate-delivery.outputs.apt_enabled }}
+      raw_enabled: ${{ steps.generate-delivery.outputs.raw_enabled }}
+      raw_publish_cfg_path: ${{ steps.generate-delivery.outputs.raw_publish_cfg_path }}
       from_repository_url: ${{ steps.generate-release-info.outputs.from_repository_url }}
       release_name: ${{ steps.generate-release-info.outputs.release_name }}
       conan_release_remote_name: ${{ steps.generate-release-info.outputs.conan_release_remote_name }}
@@ -129,9 +132,33 @@ jobs:
           else
             deliverable="true"
           fi
+
+          apt_enabled=false
+          raw_enabled=false
+          raw_publish_cfg_path=""
+
+          if [ "${deliverable}" = "true" ]; then
+            apt_enabled=$(yq -r '.productPublish.apt.enabled' "${CONAN_CONTEXT_PATH}")
+            if [ "${apt_enabled}" = "null" ] || [ -z "${apt_enabled}" ]; then
+              apt_enabled=true
+            fi
+            raw_enabled=$(yq -r '.productPublish.raw.enabled // false' "${CONAN_CONTEXT_PATH}")
+            raw_publish_cfg_path=".productPublish.raw.publish_cfg"
+            raw_repository=$(yq -r "${raw_publish_cfg_path}.repository // \"\"" "${CONAN_CONTEXT_PATH}")
+
+            if [ "${raw_enabled}" = "true" ] && [ -z "${raw_repository}" ]; then
+              echo "productPublish.raw.publish_cfg.repository must be defined when RAW publication is enabled"
+              exit 1
+            fi
+          fi
+
           echo "!!!! deliverable=$deliverable / product_name=$product_name !!!!!!"
+
           echo "deliverable=$deliverable" >> "$GITHUB_OUTPUT"
           echo "product_name=$product_name" >> "$GITHUB_OUTPUT"
+          echo "apt_enabled=$apt_enabled" >> "$GITHUB_OUTPUT"
+          echo "raw_enabled=$raw_enabled" >> "$GITHUB_OUTPUT"
+          echo "raw_publish_cfg_path=${raw_publish_cfg_path}" >> "$GITHUB_OUTPUT"
 
       - name: Extract release info
         id: generate-release-info
@@ -207,7 +234,7 @@ jobs:
       - name: Set apt repository name
         id: set-apt-repo-name
         shell: bash
-        if: needs.extract-collectors.outputs.deliverable == 'true'
+        if: needs.extract-collectors.outputs.apt_enabled == 'true'
         run: |
             APT_PREFIX_NAME=${{ needs.extract-collectors.outputs.product_name }}
             if [ "null" = "${APT_PREFIX_NAME}" ] || [ -z "${APT_PREFIX_NAME}" ]; then
@@ -319,7 +346,7 @@ jobs:
               # shellcheck disable=SC2086
               if [ "${{needs.extract-collectors.outputs.deliverable}}" = 'true' ]; then
                 # shellcheck disable=SC2086
-                ${{ env.CONAN }} install ${requires} -pr:h "${profile}" --deployer delivery --deployer-folder=to_apt
+                ${{ env.CONAN }} install ${requires} -pr:h "${profile}" --deployer delivery --deployer-folder=to_delivery
               fi
           done < tmp_input;
           # Keep only bundle package ( i.e dep from cahce present in the "main" remote )
@@ -353,7 +380,7 @@ jobs:
           conan upload -f json --list downloaded.json -r "${{ needs.extract-collectors.outputs.conan_release_remote_name }}"
 
       - name: Recreate apt repository exists
-        if: needs.extract-collectors.outputs.deliverable == 'true'
+        if: needs.extract-collectors.outputs.apt_enabled == 'true'
         run: |
           conan_release_repository_url="${{ needs.extract-collectors.outputs.conan_release_remote_url }}"
           repository_url_base=$(echo "${conan_release_repository_url}" | cut -d'/' -f1-3)
@@ -378,9 +405,9 @@ jobs:
           done
 
       - name: Upload apt delivery
-        if: needs.extract-collectors.outputs.deliverable == 'true'
+        if: needs.extract-collectors.outputs.apt_enabled == 'true'
         run: |
-            for deb in ./to_apt/*.deb; do
+            for deb in ./to_delivery/*.deb; do
               [ -f "$deb" ] || continue
               echo "uploading ${deb}"
               curl --fail -u "${{secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM}}:${{secrets.GROUP_REPOSITORY_TOKEN_REPOSITORY_IT_VOQA_COM}}" \
