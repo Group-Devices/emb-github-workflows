@@ -68,6 +68,21 @@ on:
         required: false
         type: string
         default: ''
+      build-runner:
+        description: 'Optional GitHub runner label for the build job'
+        required: false
+        type: string
+        default: ''
+      build-container:
+        description: Optional build container profile
+        required: false
+        type: string
+        default: ''
+      build-conan-version:
+        description: 'Conan version to install when no build container is used'
+        required: false
+        type: string
+        default: ''
 
 
 env:
@@ -305,8 +320,65 @@ jobs:
             echo "should-build=false" >> "$GITHUB_OUTPUT"
             echo "relevant-profiles=[]" >> "$GITHUB_OUTPUT"
           fi
+  resolve-build-environment:
+    runs-on: ubuntu-latest
+    needs:
+      - collector-relevance
+    outputs:
+      runner: ${{ steps.resolve.outputs.runner }}
+      container-image: ${{ steps.resolve.outputs.container-image }}
+      conan-version: ${{ steps.resolve.outputs.conan-version }}
+
+    steps:
+      - id: resolve
+        name: Resolve build environment
+        shell: bash
+        env:
+          RUNNER_INPUT: ${{ inputs.build-runner }}
+          CONTAINER_INPUT: ${{ inputs.build-container }}
+          CONAN_VERSION_INPUT: ${{ inputs.build-conan-version }}
+        run: |
+          set -euo pipefail
+
+          # Runner used to build
+          if [ -n "$RUNNER_INPUT" ]; then
+              RUNNER="$RUNNER_INPUT"
+          else
+              if [[ "$GITHUB_REPOSITORY" == qt* ]]; then
+                  RUNNER="eks-runner-linux-x64-large"
+              else
+                  RUNNER="eks-runner-linux-x64-medium"
+              fi
+          fi
+
+          # Container used to build
+          if [ -n "$CONTAINER_INPUT" ]; then
+
+              case "$CONTAINER_INPUT" in
+                  none)
+                      CONTAINER_IMAGE=""
+                      ;;
+                  default)
+                      CONTAINER_IMAGE="repository.nexus.vixtechnology.com/docker-internal-group/{0}-compiler:main"
+                      ;;
+                  *)
+                      echo "Unknown build container: $CONTAINER_INPUT"
+                      exit 1
+                      ;;
+              esac
+          else
+              # Current behaviour
+              CONTAINER_IMAGE="repository.nexus.vixtechnology.com/docker-internal-group/{0}-compiler:main"
+          fi
+
+          # Conan version used during build
+          CONAN_VERSION="$CONAN_VERSION_INPUT"
+
+          echo "runner=$RUNNER" >> "$GITHUB_OUTPUT"
+          echo "container-image=$CONTAINER_IMAGE" >> "$GITHUB_OUTPUT"
+          echo "conan-version=$CONAN_VERSION" >> "$GITHUB_OUTPUT"
   build-and-upload:
-    runs-on: ${{ startsWith(github.event.repository.name, 'qt') && 'eks-runner-linux-x64-large' || 'eks-runner-linux-x64-medium' }}
+    runs-on: ${{ needs.resolve-build-environment.outputs.runner }}
     if: >-
       always() &&
       needs.collector-relevance.outputs.should-build == 'true' && (
@@ -318,17 +390,26 @@ jobs:
       - generate-conan-context
       - unit-tests
       - collector-relevance
+      - resolve-build-environment
     strategy:
       fail-fast: false
       matrix:
         profile: ${{ fromJson(needs.collector-relevance.outputs.relevant-profiles) }}
     container:
-      image: repository.nexus.vixtechnology.com/docker-internal-group/${{ matrix.profile }}-compiler:main
+      image: ${{ needs.resolve-build-environment.outputs.container-image != '' && format(needs.resolve-build-environment.outputs.container-image, matrix.profile) || null }}
       credentials:
         username: ${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
         password: ${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
     steps:
       - uses: actions/checkout@v6
+      - name: Show build environment
+        run: |
+          hostname
+          cat /etc/os-release
+          which conan
+          conan --version
+          which aarch64-none-linux-gnu-gcc || true
+          aarch64-none-linux-gnu-gcc --version || true
       - name: Set safe git path
         run: |
           repo=$(basename ${{ github.repository }})
@@ -349,6 +430,23 @@ jobs:
         with:
           name: conan-context
           path: .conan-context
+
+      - name: Install Conan and workflow tools
+        env:
+          CONAN_VERSION: ${{ needs.resolve-build-environment.outputs.conan-version }}
+        run: |
+          if [ -n "$CONAN_VERSION" ]; then
+              sudo apt-get update
+              python3 -m pip install --user "conan==$CONAN_VERSION"
+              echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          else
+              echo "Skipping Conan installation (build-conan-version not set)"
+          fi
+
+          conan --version
+          jq --version
+          gh --version
+
       - name: Configure Conan
         uses: $/.github/actions/configure-conan
         with:
@@ -357,6 +455,10 @@ jobs:
 
       - name: Resolve Conan cache mode
         run: |
+          which conan
+          conan --version
+          echo "$PATH"
+          python3 -m pip show conan
           context_cache_mode=$(yq e '.build.cache_mode // ""' "${CONAN_CONTEXT_PATH}")
           if [ -z "$context_cache_mode" ] || [ "$context_cache_mode" = "null" ]; then
             context_use_cache=$(yq e '.build.use_cache // .use_cache // false' "${CONAN_CONTEXT_PATH}")
