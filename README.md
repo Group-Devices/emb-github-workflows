@@ -360,3 +360,22 @@ The repository also contains reusable helper actions used by the workflows.
   - builds the generated documentation site used by context delivery
 
 These actions exist to keep the reusable workflows focused on orchestration while moving repeated contracts and shell logic into versioned helpers.
+
+## Package version by profile
+
+The Conan library workflow accepts an optional `package_versions_by_profile`
+mapping in its `source-build-context` JSON input (`force-build` is also accepted), alongside any `package_context`:
+
+```yaml
+with:
+  source-build-context: >-
+    {"package_versions_by_profile":{"kp6tab":"1.1.0","raptor":"1.2.0"}}
+```
+
+For a matching profile, the workflow sets `PREVIOUS_VERSION` to the selected
+base version plus `BUILD_ID` before lockfile generation and package creation.
+The existing `conan-helper` version handling is unchanged. An existing
+`PREVIOUS_VERSION` takes precedence; a dependency rebuilt by a collector keeps
+the version from its resolved Conan reference. Without a matching mapping,
+the recipe's normal version handling applies. There is still one build per
+profile and no additional version matrix.

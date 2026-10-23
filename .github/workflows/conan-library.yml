@@ -406,6 +406,24 @@ jobs:
             python3 -m pip install --disable-pip-version-check --break-system-packages ${pkgs}
           fi
 
+      - name: Select package version for profile
+        shell: bash
+        env:
+          SOURCE_BUILD_CONTEXT: ${{ inputs.source-build-context != '' && inputs.source-build-context || inputs.force-build }}
+          CONAN_PROFILE: ${{ matrix.profile }}
+        run: |
+          set -euo pipefail
+          context="$SOURCE_BUILD_CONTEXT"
+          if [ -z "$context" ]; then
+            context='{}'
+          fi
+          version=$(jq -r --arg profile "$CONAN_PROFILE" \
+            '.package_versions_by_profile[$profile] // empty' <<< "$context")
+          # A dependency rebuild's resolved reference takes precedence over the profile default.
+          if [ -n "$version" ] && [ -z "${PREVIOUS_VERSION:-}" ]; then
+            echo "PREVIOUS_VERSION=${version}+${BUILD_ID}" >> "$GITHUB_ENV"
+          fi
+
       - name: Restore Conan build state
         uses: $/.github/actions/restore-conan-build-state
         with:
