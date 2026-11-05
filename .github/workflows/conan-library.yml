@@ -515,6 +515,7 @@ jobs:
 
       - name: Ensure SonarCloud project exists
         if: inputs.run-as-fast-build == false && inputs.enable-quality-analysis && matrix.profile == 'default'
+        shell: bash
         env:
           SONAR_ORG_INPUT: ${{ inputs.sonar-organization }}
           SONAR_TOKEN: ${{ secrets.SONARQUBE_TOKEN }}
