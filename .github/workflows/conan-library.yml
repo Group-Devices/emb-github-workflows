@@ -466,10 +466,21 @@ jobs:
             package_ref=$(jq -er '
               (.graph.root | keys) as $roots
               | if ($roots | length) != 1 then error("Expected one Conan graph root")
-                else .graph.nodes[$roots[0]] as $root
-                | if ($root.ref | type) != "string" or ($root.package_id | type) != "string"
+                else .graph as $graph
+                | [
+                    $graph.nodes[$roots[0]].dependencies
+                    | to_entries[]
+                    | select(.value.direct == true)
+                    | $graph.nodes[.key]
+                    | select(.context == "host")
+                  ] as $packages
+                | if ($packages | length) != 1
+                  then error("Expected one direct host package in Conan create output")
+                  else $packages[0]
+                  end
+                | if (.ref | type) != "string" or (.package_id | type) != "string"
                   then error("Conan create output is missing the built package reference")
-                  else "\($root.ref):\($root.package_id)"
+                  else "\(.ref):\(.package_id)"
                   end
                 end
             ' conan-create-graph.json)
