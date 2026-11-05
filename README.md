@@ -312,6 +312,23 @@ Legacy compatibility is still kept for now:
 
 New integrations should use only `source_build_context`.
 
+### SonarCloud analysis
+
+If `SONAR_TOKEN` is missing, all Sonar steps are skipped with a notice; the
+normal package build and publishing continue.
+
+When `enable-quality-analysis` is enabled for a non-fast build, the `default`
+profile runs an additional `conan build` against the checked-out sources after
+the normal package build. It reuses the profile, context configuration and
+lockfile, and enables CMake compilation database generation.
+
+The analysis build writes its output to a fresh runner temporary directory.
+The workflow requires exactly one non-empty `compile_commands.json` referencing
+existing checkout sources, then copies it to the checkout for SonarCloud.
+The scanner and compilation database therefore reference the same source paths;
+a database from `conan create` must not be used to scan the checkout because
+that command builds a separate source copy in Conan's cache.
+
 ## Consumer Migration
 
 When moving a package, collector, or context repository to the reusable workflows on `release/v1.0`, the expected migration is:

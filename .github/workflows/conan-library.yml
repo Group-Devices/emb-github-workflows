@@ -13,6 +13,11 @@ on:
         required: false
         type: boolean
         default: false
+      sonar-organization:
+        description: 'SonarQube Cloud organization key'
+        required: false
+        type: string
+        default: ''
       enable-rebuild-collectors:
         description: 'Enable or not the rebuild of collectors'
         required: false
@@ -164,16 +169,6 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           artifact-name: code-coverage-report
           update-comment: true
-          
-  quality-analysis:
-    runs-on: eks-runner-linux-x64-medium
-    container:
-      image: ghcr.io/actions/actions-runner:latest
-    needs:
-      - generate-conan-context
-    if: inputs.run-as-fast-build == false && inputs.enable-quality-analysis
-    steps:
-      - run: echo "Will run a SonarQube analysis"
   collector-relevance:
     runs-on: eks-runner-linux-x64-medium
     if: always()
@@ -539,6 +534,100 @@ jobs:
         with:
           profile: ${{ matrix.profile }}
           cache-mode: ${{ env.CACHE_MODE }}
+
+      - name: Check Sonar availability
+        id: sonar-availability
+        if: inputs.run-as-fast-build == false && inputs.enable-quality-analysis && matrix.profile == 'default'
+        shell: bash
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SONAR_TOKEN}" ]; then
+            echo "::notice::SONAR_TOKEN is missing; skipping Sonar analysis"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build checkout for Sonar analysis
+        if: steps.sonar-availability.outputs.enabled == 'true'
+        shell: bash
+        env:
+          CONAN_PROFILE: ${{ matrix.profile }}
+          BUILD_MISSING: ${{ inputs.build-missing }}
+        run: |
+          set -euo pipefail
+
+          build_folder=$(mktemp -d "${RUNNER_TEMP}/sonar-build.XXXXXX")
+          lock_options=()
+          if [ "${BUILD_MISSING}" = "true" ]; then
+            lock_options+=(--lockfile-partial)
+          fi
+
+          # Build the checkout, not Conan's cached source copy, so scanner paths match.
+          # shellcheck disable=SC2086 # Split the generated sequence of -c options.
+          conan build . -pr:h "${CONAN_PROFILE}" $CONAN_CONTEXT_CONF_ARGS \
+            -c:h='tools.cmake.cmaketoolchain:extra_variables={"CMAKE_EXPORT_COMPILE_COMMANDS": "ON"}' \
+            -l conan-lockfile.json "${lock_options[@]}" \
+            --output-folder "${build_folder}" 2>&1 | tee sonar_build.log
+
+          mapfile -d '' databases < <(find "${build_folder}" -type f -name compile_commands.json -print0)
+          if [ "${#databases[@]}" -ne 1 ]; then
+            echo "Expected one compile_commands.json in Sonar build folder ${build_folder}, found ${#databases[@]}"
+            exit 1
+          fi
+          if ! jq -e 'type == "array" and length > 0' "${databases[0]}" >/dev/null; then
+            echo "Sonar compilation database must be a non-empty JSON array"
+            exit 1
+          fi
+          source_paths=$(jq -r '.[] | if (.file | startswith("/")) then .file else .directory + "/" + .file end' "${databases[0]}")
+          checkout_source_found=false
+          while IFS= read -r source_path; do
+            if [ -f "${source_path}" ]; then
+              source_path=$(realpath "${source_path}")
+              if [[ "${source_path}" == "${GITHUB_WORKSPACE}/"* ]]; then
+                checkout_source_found=true
+                break
+              fi
+            fi
+          done <<< "${source_paths}"
+          if [ "${checkout_source_found}" != "true" ]; then
+            echo "Sonar compilation database does not reference any existing checkout source files"
+            exit 1
+          fi
+          cp "${databases[0]}" ./compile_commands.json
+
+      - name: Prepare Sonar parameters
+        if: steps.sonar-availability.outputs.enabled == 'true'
+        shell: bash
+        env:
+          SONAR_ORG_INPUT: ${{ inputs.sonar-organization }}
+        run: |
+          set -euo pipefail
+
+          SONAR_ORG="${SONAR_ORG_INPUT}"
+          if [ -z "$SONAR_ORG" ]; then
+              SONAR_ORG="${{ github.repository_owner }}"
+          fi
+          SONAR_ORG=$(echo "$SONAR_ORG" | tr '[:upper:]' '[:lower:]')
+          PROJECT_KEY="${SONAR_ORG}_${GITHUB_REPOSITORY#*/}"
+
+          echo "SONARQUBE_PROJECT_KEY=$PROJECT_KEY" >> "$GITHUB_ENV"
+          echo "SONAR_ORGANIZATION=$SONAR_ORG" >> "$GITHUB_ENV"
+
+      - name: SonarCloud scan
+        uses: SonarSource/sonarqube-scan-action@v8
+        if: steps.sonar-availability.outputs.enabled == 'true'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: >
+            --define sonar.cfamily.compile-commands=./compile_commands.json
+            --define sonar.projectKey=${{ env.SONARQUBE_PROJECT_KEY }}
+            --define sonar.organization=${{ env.SONAR_ORGANIZATION }}
 
   docker-profile-plan:
     runs-on: eks-runner-linux-x64-medium
