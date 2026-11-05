@@ -13,6 +13,11 @@ on:
         required: false
         type: boolean
         default: false
+      sonar-organization:
+        description: 'SonarQube Cloud organization key'
+        required: false
+        type: string
+        default: ''
       enable-rebuild-collectors:
         description: 'Enable or not the rebuild of collectors'
         required: false
@@ -143,16 +148,6 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           artifact-name: code-coverage-report
           update-comment: true
-          
-  quality-analysis:
-    runs-on: eks-runner-linux-x64-medium
-    container:
-      image: ghcr.io/actions/actions-runner:latest
-    needs:
-      - generate-conan-context
-    if: inputs.run-as-fast-build == false && inputs.enable-quality-analysis
-    steps:
-      - run: echo "Will run a SonarQube analysis"
   collector-relevance:
     runs-on: eks-runner-linux-x64-medium
     if: always()
@@ -394,6 +389,7 @@ jobs:
         env:
           ALL_VARS_JSON: ${{ toJSON(vars) }}
           ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
+          CONAN_PROFILE: ${{ matrix.profile }}
         run: |
           set -o pipefail
 
@@ -465,7 +461,28 @@ jobs:
             LOCK_OPTIONS="--lockfile-partial"
           fi  
           # shellcheck disable=SC2086 # Split the generated sequence of -c options.
-          conan create . -pr:h "${{ matrix.profile }}" $CONAN_CONTEXT_CONF_ARGS -l conan-lockfile.json $LOCK_OPTIONS 2>&1 | tee conan_create.log
+          if [ "${{ inputs.enable-quality-analysis }}" = "true" ] && [ "${CONAN_PROFILE}" = "default" ]; then
+            conan create . -pr:h "${{ matrix.profile }}" $CONAN_CONTEXT_CONF_ARGS -c:h='tools.cmake.cmaketoolchain:extra_variables={"CMAKE_EXPORT_COMPILE_COMMANDS": "ON"}' -l conan-lockfile.json $LOCK_OPTIONS --format=json --out-file=conan-create-graph.json 2>&1 | tee conan_create.log
+            package_ref=$(jq -er '
+              (.graph.root | keys) as $roots
+              | if ($roots | length) != 1 then error("Expected one Conan graph root")
+                else .graph.nodes[$roots[0]] as $root
+                | if ($root.ref | type) != "string" or ($root.package_id | type) != "string"
+                  then error("Conan create output is missing the built package reference")
+                  else "\($root.ref):\($root.package_id)"
+                  end
+                end
+            ' conan-create-graph.json)
+            build_folder=$(conan cache path "${package_ref}" --folder=build)
+            compile_commands=$(find "${build_folder}" -type f -name compile_commands.json -print -quit)
+            if [ -z "${compile_commands}" ]; then
+              echo "compile_commands.json was not found in Conan build folder ${build_folder}"
+              exit 1
+            fi
+            cp "${compile_commands}" ./compile_commands.json
+          else
+            conan create . -pr:h "${{ matrix.profile }}" $CONAN_CONTEXT_CONF_ARGS -l conan-lockfile.json $LOCK_OPTIONS 2>&1 | tee conan_create.log
+          fi
           if [ ${{ github.event_name }} != 'pull_request' ]; then
             conan upload -r "${upload}" "${repo}" --confirm
           fi   
@@ -484,6 +501,83 @@ jobs:
         with:
           profile: ${{ matrix.profile }}
           cache-mode: ${{ env.CACHE_MODE }}
+
+      - name: Ensure SonarCloud project exists
+        if: inputs.run-as-fast-build == false && inputs.enable-quality-analysis && matrix.profile == 'default'
+        env:
+          SONAR_ORG_INPUT: ${{ inputs.sonar-organization }}
+          SONAR_TOKEN: ${{ secrets.SONARQUBE_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          SONAR_ORG="${SONAR_ORG_INPUT}"
+          if [ -z "$SONAR_ORG" ]; then
+              SONAR_ORG="${{ github.repository_owner }}"
+          fi
+          SONAR_ORG=$(echo "$SONAR_ORG" | tr '[:upper:]' '[:lower:]')
+          PROJECT_KEY="${SONAR_ORG}_${GITHUB_REPOSITORY#*/}"
+
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "SONARQUBE_TOKEN is required to check or create the SonarCloud project"
+            exit 1
+          fi
+
+          search_project() {
+            curl --fail-with-body --silent --show-error \
+              --user "${SONAR_TOKEN}:" \
+              --get \
+              --data-urlencode "organization=${SONAR_ORG}" \
+              --data-urlencode "projects=${PROJECT_KEY}" \
+              https://sonarcloud.io/api/projects/search
+          }
+
+          project_exists() {
+            jq -e --arg key "$PROJECT_KEY" \
+              '.components | any(.key == $key)' >/dev/null
+          }
+
+          if ! project_response=$(search_project); then
+            echo "Unable to check whether SonarCloud project ${PROJECT_KEY} exists"
+            exit 1
+          fi
+
+          if ! printf '%s\n' "$project_response" | project_exists; then
+            if create_response=$(curl --fail-with-body --silent --show-error \
+              --user "${SONAR_TOKEN}:" \
+              --request POST \
+              --data-urlencode "organization=${SONAR_ORG}" \
+              --data-urlencode "project=${PROJECT_KEY}" \
+              --data-urlencode "name=${GITHUB_REPOSITORY#*/}" \
+              https://sonarcloud.io/api/projects/create); then
+              echo "Created SonarCloud project ${PROJECT_KEY}"
+            else
+              create_error="$create_response"
+              if project_response=$(search_project) &&
+                printf '%s\n' "$project_response" | project_exists; then
+                echo "SonarCloud project ${PROJECT_KEY} was created concurrently"
+              else
+                echo "Unable to create SonarCloud project ${PROJECT_KEY}: ${create_error}"
+                exit 1
+              fi
+            fi
+          else
+            echo "SonarCloud project ${PROJECT_KEY} already exists"
+          fi
+
+          echo "SONARQUBE_PROJECT_KEY=$PROJECT_KEY" >> "$GITHUB_ENV"
+          echo "SONAR_ORGANIZATION=$SONAR_ORG" >> "$GITHUB_ENV"
+
+      - name: SonarCloud scan
+        uses: SonarSource/sonarqube-scan-action@v8
+        if: inputs.run-as-fast-build == false && inputs.enable-quality-analysis && matrix.profile == 'default'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONARQUBE_ANALYZER_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: >
+            --define sonar.cfamily.compile-commands=./compile_commands.json
+            --define sonar.projectKey=${{ env.SONARQUBE_PROJECT_KEY }}
+            --define sonar.organization=${{ env.SONAR_ORGANIZATION }}
 
   skip-collector:
     runs-on: ubuntu-latest
