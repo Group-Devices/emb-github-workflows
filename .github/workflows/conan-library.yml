@@ -389,7 +389,6 @@ jobs:
         env:
           ALL_VARS_JSON: ${{ toJSON(vars) }}
           ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
-          CONAN_PROFILE: ${{ matrix.profile }}
         run: |
           set -o pipefail
 
@@ -461,39 +460,7 @@ jobs:
             LOCK_OPTIONS="--lockfile-partial"
           fi  
           # shellcheck disable=SC2086 # Split the generated sequence of -c options.
-          if [ "${{ inputs.enable-quality-analysis }}" = "true" ] && [ "${CONAN_PROFILE}" = "default" ]; then
-            conan create . -pr:h "${{ matrix.profile }}" $CONAN_CONTEXT_CONF_ARGS -c:h='tools.cmake.cmaketoolchain:extra_variables={"CMAKE_EXPORT_COMPILE_COMMANDS": "ON"}' -l conan-lockfile.json $LOCK_OPTIONS --format=json --out-file=conan-create-graph.json 2>&1 | tee conan_create.log
-            package_ref=$(jq -er '
-              (.graph.root | keys) as $roots
-              | if ($roots | length) != 1 then error("Expected one Conan graph root")
-                else .graph as $graph
-                | [
-                    $graph.nodes[$roots[0]].dependencies
-                    | to_entries[]
-                    | select(.value.direct == true)
-                    | $graph.nodes[.key]
-                    | select(.context == "host")
-                  ] as $packages
-                | if ($packages | length) != 1
-                  then error("Expected one direct host package in Conan create output")
-                  else $packages[0]
-                  end
-                | if (.ref | type) != "string" or (.package_id | type) != "string"
-                  then error("Conan create output is missing the built package reference")
-                  else "\(.ref):\(.package_id)"
-                  end
-                end
-            ' conan-create-graph.json)
-            build_folder=$(conan cache path "${package_ref}" --folder=build)
-            compile_commands=$(find "${build_folder}" -type f -name compile_commands.json -print -quit)
-            if [ -z "${compile_commands}" ]; then
-              echo "compile_commands.json was not found in Conan build folder ${build_folder}"
-              exit 1
-            fi
-            cp "${compile_commands}" ./compile_commands.json
-          else
-            conan create . -pr:h "${{ matrix.profile }}" $CONAN_CONTEXT_CONF_ARGS -l conan-lockfile.json $LOCK_OPTIONS 2>&1 | tee conan_create.log
-          fi
+          conan create . -pr:h "${{ matrix.profile }}" $CONAN_CONTEXT_CONF_ARGS -l conan-lockfile.json $LOCK_OPTIONS 2>&1 | tee conan_create.log
           if [ ${{ github.event_name }} != 'pull_request' ]; then
             conan upload -r "${upload}" "${repo}" --confirm
           fi   
@@ -512,6 +479,54 @@ jobs:
         with:
           profile: ${{ matrix.profile }}
           cache-mode: ${{ env.CACHE_MODE }}
+
+      - name: Build checkout for Sonar analysis
+        if: inputs.run-as-fast-build == false && inputs.enable-quality-analysis && matrix.profile == 'default'
+        shell: bash
+        env:
+          CONAN_PROFILE: ${{ matrix.profile }}
+          BUILD_MISSING: ${{ inputs.build-missing }}
+        run: |
+          set -euo pipefail
+
+          build_folder=$(mktemp -d "${RUNNER_TEMP}/sonar-build.XXXXXX")
+          lock_options=()
+          if [ "${BUILD_MISSING}" = "true" ]; then
+            lock_options+=(--lockfile-partial)
+          fi
+
+          # Build the checkout, not Conan's cached source copy, so scanner paths match.
+          # shellcheck disable=SC2086 # Split the generated sequence of -c options.
+          conan build . -pr:h "${CONAN_PROFILE}" $CONAN_CONTEXT_CONF_ARGS \
+            -c:h='tools.cmake.cmaketoolchain:extra_variables={"CMAKE_EXPORT_COMPILE_COMMANDS": "ON"}' \
+            -l conan-lockfile.json "${lock_options[@]}" \
+            --output-folder "${build_folder}" 2>&1 | tee sonar_build.log
+
+          mapfile -d '' databases < <(find "${build_folder}" -type f -name compile_commands.json -print0)
+          if [ "${#databases[@]}" -ne 1 ]; then
+            echo "Expected one compile_commands.json in Sonar build folder ${build_folder}, found ${#databases[@]}"
+            exit 1
+          fi
+          if ! jq -e 'type == "array" and length > 0' "${databases[0]}" >/dev/null; then
+            echo "Sonar compilation database must be a non-empty JSON array"
+            exit 1
+          fi
+          source_paths=$(jq -r '.[] | if (.file | startswith("/")) then .file else .directory + "/" + .file end' "${databases[0]}")
+          checkout_source_found=false
+          while IFS= read -r source_path; do
+            if [ -f "${source_path}" ]; then
+              source_path=$(realpath "${source_path}")
+              if [[ "${source_path}" == "${GITHUB_WORKSPACE}/"* ]]; then
+                checkout_source_found=true
+                break
+              fi
+            fi
+          done <<< "${source_paths}"
+          if [ "${checkout_source_found}" != "true" ]; then
+            echo "Sonar compilation database does not reference any existing checkout source files"
+            exit 1
+          fi
+          cp "${databases[0]}" ./compile_commands.json
 
       - name: Prepare Sonar parameters
         if: inputs.run-as-fast-build == false && inputs.enable-quality-analysis && matrix.profile == 'default'
