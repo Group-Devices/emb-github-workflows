@@ -480,8 +480,24 @@ jobs:
           profile: ${{ matrix.profile }}
           cache-mode: ${{ env.CACHE_MODE }}
 
-      - name: Build checkout for Sonar analysis
+      - name: Check Sonar availability
+        id: sonar-availability
         if: inputs.run-as-fast-build == false && inputs.enable-quality-analysis && matrix.profile == 'default'
+        shell: bash
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SONAR_TOKEN}" ]; then
+            echo "::notice::SONAR_TOKEN is missing; skipping Sonar analysis"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build checkout for Sonar analysis
+        if: steps.sonar-availability.outputs.enabled == 'true'
         shell: bash
         env:
           CONAN_PROFILE: ${{ matrix.profile }}
@@ -529,11 +545,10 @@ jobs:
           cp "${databases[0]}" ./compile_commands.json
 
       - name: Prepare Sonar parameters
-        if: inputs.run-as-fast-build == false && inputs.enable-quality-analysis && matrix.profile == 'default'
+        if: steps.sonar-availability.outputs.enabled == 'true'
         shell: bash
         env:
           SONAR_ORG_INPUT: ${{ inputs.sonar-organization }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -544,17 +559,12 @@ jobs:
           SONAR_ORG=$(echo "$SONAR_ORG" | tr '[:upper:]' '[:lower:]')
           PROJECT_KEY="${SONAR_ORG}_${GITHUB_REPOSITORY#*/}"
 
-          if [ -z "$SONAR_TOKEN" ]; then
-            echo "SONAR_TOKEN is required to check or create the SonarCloud project"
-            exit 1
-          fi
-
           echo "SONARQUBE_PROJECT_KEY=$PROJECT_KEY" >> "$GITHUB_ENV"
           echo "SONAR_ORGANIZATION=$SONAR_ORG" >> "$GITHUB_ENV"
 
       - name: SonarCloud scan
         uses: SonarSource/sonarqube-scan-action@v8
-        if: inputs.run-as-fast-build == false && inputs.enable-quality-analysis && matrix.profile == 'default'
+        if: steps.sonar-availability.outputs.enabled == 'true'
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io

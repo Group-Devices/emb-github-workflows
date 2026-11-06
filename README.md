@@ -283,6 +283,9 @@ New integrations should use only `source_build_context`.
 
 ### SonarCloud analysis
 
+If `SONAR_TOKEN` is missing, all Sonar steps are skipped with a notice; the
+normal package build and publishing continue.
+
 When `enable-quality-analysis` is enabled for a non-fast build, the `default`
 profile runs an additional `conan build` against the checked-out sources after
 the normal package build. It reuses the profile, context configuration and
