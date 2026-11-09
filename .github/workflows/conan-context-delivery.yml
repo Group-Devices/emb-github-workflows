@@ -82,7 +82,7 @@ jobs:
       effective-docs-enabled: ${{ steps.effective-docs.outputs.enabled }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Check if conan-context.yml exists
         run: |
@@ -150,7 +150,7 @@ jobs:
       - check-conan-context
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Extract the collectors list
         id: generate-collectors-list
@@ -419,7 +419,7 @@ jobs:
       - clone-workspace
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install ALM CLI
         env:
@@ -530,7 +530,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set safe git path
         run: |
@@ -870,7 +870,7 @@ jobs:
           rm -f tmp_artifact_patterns
 
       - name: 'Upload bundle release packages contents'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: packages-release-${{ matrix.profile }}
           path: ./to_conan/packages.json
@@ -878,7 +878,7 @@ jobs:
 
       - name: 'Upload bundle delivery packages contents'
         if: needs.extract-collectors.outputs.deliverable == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: packages-delivery-${{ matrix.profile }}
           path: ./to_delivery/packages.json
@@ -899,7 +899,7 @@ jobs:
         password: ${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set safe git path
         run: |
@@ -970,7 +970,7 @@ jobs:
         uses: $/.github/actions/build-bundle-docs
         
       - name: Upload bundle docs site
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: docs-default
           path: ./to_docs_site
@@ -1062,7 +1062,7 @@ jobs:
     if: needs.extract-collectors.outputs.from_repository_url != needs.extract-collectors.outputs.conan_release_remote_url
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Authenticate gh for current repository owner (release scope)
         uses: $/.github/actions/gh-auth-owner

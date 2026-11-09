@@ -102,7 +102,7 @@ jobs:
       docker-config: ${{ steps.generate-conan-context.outputs.docker-config }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: $/.github/actions/generate-conan-context
         id: generate-conan-context
         with:
@@ -122,7 +122,7 @@ jobs:
     needs:
       - generate-conan-context
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           name: conan-context
@@ -183,7 +183,7 @@ jobs:
         username: ${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
         password: ${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Prepare Conan context
         shell: bash
@@ -328,7 +328,7 @@ jobs:
         username: ${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
         password: ${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Set safe git path
         run: |
           repo=$(basename ${{ github.repository }})
@@ -522,7 +522,7 @@ jobs:
 
       - if: ${{ inputs.build-missing }}
         name: upload build packages list
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: build-list-${{ matrix.profile }}
           path: build-${{ matrix.profile }}.json

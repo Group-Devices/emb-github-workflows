@@ -237,7 +237,7 @@ runs:
         echo "config=${docker_config}" >> "$GITHUB_OUTPUT"
 
     - name: 'Upload conan context'
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: conan-context
         path: ${{ env.CONAN_CONTEXT_PATH }}
