@@ -639,6 +639,7 @@ jobs:
 
       - name: Upload to conan
         id: upload
+        shell: bash
         env:
           ALL_VARS_JSON: ${{ toJSON(vars) }}
           ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
