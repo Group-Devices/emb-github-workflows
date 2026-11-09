@@ -21,7 +21,7 @@ jobs:
     steps:
 
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -30,7 +30,7 @@ jobs:
           github_changelog_generator -u "${GITHUB_REPOSITORY_OWNER}" -p "${GITHUB_REPOSITORY#"$GITHUB_REPOSITORY_OWNER"/}" -t ${{ github.token }} --output CHANGELOG.md --no-unreleased --pr-label="" --no-issues
 
       - name: Add CHANGELOG.md to artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: changelog-full
           path: CHANGELOG*.md
@@ -49,12 +49,12 @@ jobs:
       - generate-changelog
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: '0'
 
       - name: Get CHANGELOG.md from artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: changelog-full
 

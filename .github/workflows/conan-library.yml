@@ -13,6 +13,11 @@ on:
         required: false
         type: boolean
         default: false
+      sonar-organization:
+        description: 'SonarQube Cloud organization key'
+        required: false
+        type: string
+        default: ''
       enable-rebuild-collectors:
         description: 'Enable or not the rebuild of collectors'
         required: false
@@ -97,11 +102,13 @@ jobs:
       docker-config: ${{ steps.generate-conan-context.outputs.docker-config }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: $/.github/actions/generate-conan-context
         id: generate-conan-context
         with:
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
+          app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
   unit-tests:
     runs-on: eks-runner-linux-x64-medium
     if: inputs.run-as-fast-build == false && inputs.run-unit-tests
@@ -115,7 +122,7 @@ jobs:
     needs:
       - generate-conan-context
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           name: conan-context
@@ -123,7 +130,9 @@ jobs:
       - name: Configure Conan
         uses: $/.github/actions/configure-conan
         with:
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
+          app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
 
       - run: bash test.sh
@@ -160,16 +169,6 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           artifact-name: code-coverage-report
           update-comment: true
-          
-  quality-analysis:
-    runs-on: eks-runner-linux-x64-medium
-    container:
-      image: ghcr.io/actions/actions-runner:latest
-    needs:
-      - generate-conan-context
-    if: inputs.run-as-fast-build == false && inputs.enable-quality-analysis
-    steps:
-      - run: echo "Will run a SonarQube analysis"
   collector-relevance:
     runs-on: eks-runner-linux-x64-medium
     if: always()
@@ -184,7 +183,7 @@ jobs:
         username: ${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
         password: ${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Prepare Conan context
         shell: bash
@@ -206,6 +205,7 @@ jobs:
       - name: Configure Conan
         uses: $/.github/actions/configure-conan
         with:
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
 
@@ -328,7 +328,7 @@ jobs:
         username: ${{ secrets.REPOSITORY_USERNAME_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
         password: ${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Set safe git path
         run: |
           repo=$(basename ${{ github.repository }})
@@ -352,7 +352,9 @@ jobs:
       - name: Configure Conan
         uses: $/.github/actions/configure-conan
         with:
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
+          app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
 
       - name: Resolve Conan cache mode
@@ -375,7 +377,6 @@ jobs:
               exit 1
               ;;
           esac
-
       - name: Export GitHub context to environment
         run: |
           {
@@ -428,17 +429,26 @@ jobs:
         uses: $/.github/actions/restore-conan-build-state
         with:
           source-build-context: ${{ inputs.source-build-context != '' && inputs.source-build-context || inputs.force-build }}
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
           profile: ${{ matrix.profile }}
           cache-mode: ${{ env.CACHE_MODE }}
           create-lockfile-command: conan lock create . --profile=${{ matrix.profile }} --lockfile-out=conan-lockfile.json
 
+      - name: Resolve GitHub App token script path
+        id: resolve-github-app-token-script
+        uses: $/.github/actions/gh-auth-owner
+
       - name: Conan create
         shell: bash
         env:
+          ALL_VARS_JSON: ${{ toJSON(vars) }}
           ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
         run: |
           set -o pipefail
+
+          source "${{ steps.resolve-github-app-token-script.outputs.script-path }}"
+
           upload=$(yq e '.upload' "${CONAN_CONTEXT_PATH}")
           if [ -z "${upload}" ] || [ "null" = "${upload}" ]; then
             echo "Field upload is missing in ${CONAN_CONTEXT_PATH}"
@@ -464,25 +474,23 @@ jobs:
               context=$(yq e '.bundle' "${CONAN_CONTEXT_PATH}")
               if [ "${bundle}" !=  "${context}" ]; then
                 echo "need to rebuild a package ${ref} from another context ${bundle}"  
-                echo "Looks like ${bundle is broken}"
+                echo "Looks like ${bundle} is broken"
                 exit 1
               fi
               OWNER="${url#*//}"
               OWNER="${OWNER#*/}"
               OWNER="${OWNER%/*}"
               echo "url $url sha $sha OWNER $OWNER"
-              OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
-              OWNER_GIT_TOKEN=$(printf '%s\n' "$ALL_SECRETS_JSON" | jq -r --arg name "$OWNER_GIT_TOKEN_SECRET" '.[$name]')
+              APP_CREDENTIAL_PREFIX='${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}'
+              OWNER_GIT_TOKEN=$(github_app_token_for_owner_from_payloads "${OWNER}" "${ALL_VARS_JSON}" "${ALL_SECRETS_JSON}" "default" "${APP_CREDENTIAL_PREFIX}")
               if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
-                 echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
-                 echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY_OWNER}/settings/secrets/actions"
-                 exit 1
+                echo "Unable to generate GitHub App token for owner ${OWNER}"
+                exit 1
               else
-                 echo "Found secret ${OWNER_GIT_TOKEN_SECRET}"
+                echo "Generated GitHub App token for owner ${OWNER}"
               fi
-              echo "${OWNER_GIT_TOKEN}" > mytoken.txt
-              gh auth login --with-token < mytoken.txt
-              rm mytoken.txt              
+              export GH_TOKEN="${OWNER_GIT_TOKEN}"
+              export GITHUB_TOKEN="${OWNER_GIT_TOKEN}"
               echo "extracting package name and version from $ref"
               name="${ref%/*}"
               prev="${ref#*/}"
@@ -514,7 +522,7 @@ jobs:
 
       - if: ${{ inputs.build-missing }}
         name: upload build packages list
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: build-list-${{ matrix.profile }}
           path: build-${{ matrix.profile }}.json
@@ -526,6 +534,100 @@ jobs:
         with:
           profile: ${{ matrix.profile }}
           cache-mode: ${{ env.CACHE_MODE }}
+
+      - name: Check Sonar availability
+        id: sonar-availability
+        if: inputs.run-as-fast-build == false && inputs.enable-quality-analysis && matrix.profile == 'default'
+        shell: bash
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SONAR_TOKEN}" ]; then
+            echo "::notice::SONAR_TOKEN is missing; skipping Sonar analysis"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build checkout for Sonar analysis
+        if: steps.sonar-availability.outputs.enabled == 'true'
+        shell: bash
+        env:
+          CONAN_PROFILE: ${{ matrix.profile }}
+          BUILD_MISSING: ${{ inputs.build-missing }}
+        run: |
+          set -euo pipefail
+
+          build_folder=$(mktemp -d "${RUNNER_TEMP}/sonar-build.XXXXXX")
+          lock_options=()
+          if [ "${BUILD_MISSING}" = "true" ]; then
+            lock_options+=(--lockfile-partial)
+          fi
+
+          # Build the checkout, not Conan's cached source copy, so scanner paths match.
+          # shellcheck disable=SC2086 # Split the generated sequence of -c options.
+          conan build . -pr:h "${CONAN_PROFILE}" $CONAN_CONTEXT_CONF_ARGS \
+            -c:h='tools.cmake.cmaketoolchain:extra_variables={"CMAKE_EXPORT_COMPILE_COMMANDS": "ON"}' \
+            -l conan-lockfile.json "${lock_options[@]}" \
+            --output-folder "${build_folder}" 2>&1 | tee sonar_build.log
+
+          mapfile -d '' databases < <(find "${build_folder}" -type f -name compile_commands.json -print0)
+          if [ "${#databases[@]}" -ne 1 ]; then
+            echo "Expected one compile_commands.json in Sonar build folder ${build_folder}, found ${#databases[@]}"
+            exit 1
+          fi
+          if ! jq -e 'type == "array" and length > 0' "${databases[0]}" >/dev/null; then
+            echo "Sonar compilation database must be a non-empty JSON array"
+            exit 1
+          fi
+          source_paths=$(jq -r '.[] | if (.file | startswith("/")) then .file else .directory + "/" + .file end' "${databases[0]}")
+          checkout_source_found=false
+          while IFS= read -r source_path; do
+            if [ -f "${source_path}" ]; then
+              source_path=$(realpath "${source_path}")
+              if [[ "${source_path}" == "${GITHUB_WORKSPACE}/"* ]]; then
+                checkout_source_found=true
+                break
+              fi
+            fi
+          done <<< "${source_paths}"
+          if [ "${checkout_source_found}" != "true" ]; then
+            echo "Sonar compilation database does not reference any existing checkout source files"
+            exit 1
+          fi
+          cp "${databases[0]}" ./compile_commands.json
+
+      - name: Prepare Sonar parameters
+        if: steps.sonar-availability.outputs.enabled == 'true'
+        shell: bash
+        env:
+          SONAR_ORG_INPUT: ${{ inputs.sonar-organization }}
+        run: |
+          set -euo pipefail
+
+          SONAR_ORG="${SONAR_ORG_INPUT}"
+          if [ -z "$SONAR_ORG" ]; then
+              SONAR_ORG="${{ github.repository_owner }}"
+          fi
+          SONAR_ORG=$(echo "$SONAR_ORG" | tr '[:upper:]' '[:lower:]')
+          PROJECT_KEY="${SONAR_ORG}_${GITHUB_REPOSITORY#*/}"
+
+          echo "SONARQUBE_PROJECT_KEY=$PROJECT_KEY" >> "$GITHUB_ENV"
+          echo "SONAR_ORGANIZATION=$SONAR_ORG" >> "$GITHUB_ENV"
+
+      - name: SonarCloud scan
+        uses: SonarSource/sonarqube-scan-action@v8
+        if: steps.sonar-availability.outputs.enabled == 'true'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: >
+            --define sonar.cfamily.compile-commands=./compile_commands.json
+            --define sonar.projectKey=${{ env.SONARQUBE_PROJECT_KEY }}
+            --define sonar.organization=${{ env.SONAR_ORGANIZATION }}
 
   docker-profile-plan:
     runs-on: eks-runner-linux-x64-medium
@@ -547,9 +649,11 @@ jobs:
           name: conan-context
           path: .conan-context
       - name: Configure Conan
-        uses: Group-Devices/emb-github-workflows/.github/actions/configure-conan@release/v1.0
+        uses: $/.github/actions/configure-conan
         with:
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
+          app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
       - id: plan
         name: Select Docker profiles
@@ -632,6 +736,7 @@ jobs:
         uses: $/.github/actions/gh-auth-owner
         with:
           owner: ${{ steps.destination.outputs.owner }}
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
 
       - name: Check Docker build destination
@@ -803,7 +908,9 @@ jobs:
         uses: $/.github/actions/gh-auth-owner
         with:
           owner: ${{ env.COLLECTOR_OWNER }}
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
+          app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
 
       - name: Check if repository ${{ matrix.collector }} exists
         run: |
@@ -900,7 +1007,9 @@ jobs:
         uses: $/.github/actions/gh-auth-owner
         with:
           owner: ${{ env.CONTEXT_OWNER }}
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
+          app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
       - id: collector-context
         name: Build collector source context
         uses: $/.github/actions/build-source-build-context
