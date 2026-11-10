@@ -457,7 +457,7 @@ jobs:
           else
             echo "Conan upload to repository ${upload}"
           fi
-          repo=$(basename ${{ github.repository }})
+          repo=$(basename "${REPO}" | tr '[:upper:]' '[:lower:]')
           use_ripple_id=$(yq e '.use_ripple_id' "${CONAN_CONTEXT_PATH}")
           if [ "${use_ripple_id}" = "true" ]; then
                echo "USE_RIPPLE_ID=true" >> "$GITHUB_ENV"
