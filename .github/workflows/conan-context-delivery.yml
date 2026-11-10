@@ -629,7 +629,7 @@ jobs:
                 delivery_conf_args="-c user.delivery:artifact_patterns=${delivery_patterns}"
             fi
             # shellcheck disable=SC2086 # Split the generated sequence of -c options.
-            ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" $CONAN_CONTEXT_CONF_ARGS $delivery_conf_args --deployer delivery --deployer-folder=to_delivery
+            ${{ env.CONAN }} install "$@" -pr:h "${{ matrix.profile }}" $CONAN_CONTEXT_CONF_ARGS $delivery_conf_args --deployer delivery --deployer-folder=to_delivery -c tools.graph:skip_binaries=False
           fi
           ${{ env.CONAN }} remote enable "${{ needs.extract-collectors.outputs.conan_release_remote_name}}"
 
