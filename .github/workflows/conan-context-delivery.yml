@@ -82,7 +82,7 @@ jobs:
       effective-docs-enabled: ${{ steps.effective-docs.outputs.enabled }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Check if conan-context.yml exists
         run: |
@@ -150,7 +150,7 @@ jobs:
       - check-conan-context
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Extract the collectors list
         id: generate-collectors-list
@@ -419,7 +419,7 @@ jobs:
       - clone-workspace
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install ALM CLI
         env:
@@ -530,7 +530,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set safe git path
         run: |
@@ -540,7 +540,9 @@ jobs:
       - name: Configure conan
         uses: $/.github/actions/configure-conan
         with:
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
+          app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
 
       - name: Resolve Conan cache mode
@@ -572,6 +574,7 @@ jobs:
           source-repo: ${{ inputs.source_repo }}
           source-run-id: ${{ inputs.source_run_id }}
           source-owner: ${{ inputs.source_owner }}
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
           profile: ${{ matrix.profile }}
           cache-mode: ${{ env.CACHE_MODE }}
@@ -630,11 +633,19 @@ jobs:
           fi
           ${{ env.CONAN }} remote enable "${{ needs.extract-collectors.outputs.conan_release_remote_name}}"
 
+      - name: Resolve GitHub App token script path
+        id: resolve-github-app-token-script
+        uses: $/.github/actions/gh-auth-owner
+
       - name: Upload to conan
         id: upload
+        shell: bash
         env:
+          ALL_VARS_JSON: ${{ toJSON(vars) }}
           ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
         run: |
+          source "${{ steps.resolve-github-app-token-script.outputs.script-path }}"
+
           DELIVERY_NAME=${{ needs.preflight-checks.outputs.delivery-name }}
           echo "Start upload release packages"
           AUTHENTICATED_OWNER=""
@@ -653,20 +664,17 @@ jobs:
             URL_REL=${URL_REL%.git}
             OWNER=$(echo "${URL_REL}" | cut -d'/' -f1)
             if [ "${AUTHENTICATED_OWNER}" != "${OWNER}" ]; then
-              echo "Extracting github token secret for org ${OWNER}"
-              OWNER_GIT_TOKEN_SECRET=GIT_TOKEN_RELEASE_$(echo "${OWNER}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
-              echo "Looking for matching github secret ${OWNER_GIT_TOKEN_SECRET}"
-              OWNER_GIT_TOKEN=$(printf '%s\n' "$ALL_SECRETS_JSON" | jq -r --arg name "$OWNER_GIT_TOKEN_SECRET" '.[$name]')
+              echo "Generating GitHub App token for org ${OWNER}"
+              APP_CREDENTIAL_PREFIX='${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}'
+              OWNER_GIT_TOKEN=$(github_app_token_for_owner_from_payloads "${OWNER}" "${ALL_VARS_JSON}" "${ALL_SECRETS_JSON}" "release" "${APP_CREDENTIAL_PREFIX}")
               if [ -z "${OWNER_GIT_TOKEN}" ] || [ "null" = "${OWNER_GIT_TOKEN}" ]; then
-                echo "Secret ${OWNER_GIT_TOKEN_SECRET} not found !"
-                echo "Please add secret ${OWNER_GIT_TOKEN_SECRET} to https://github.com/organizations/${GITHUB_REPOSITORY}/settings/secrets/actions"
+                echo "Unable to generate GitHub App token for org ${OWNER}"
                 exit 1
               else
-                echo "Found secret ${OWNER_GIT_TOKEN_SECRET}"
+                echo "GitHub App token generated for org ${OWNER}"
               fi
-              echo "${OWNER_GIT_TOKEN}" > mytoken.txt
-              gh auth login --with-token < mytoken.txt
-              rm mytoken.txt
+              export GH_TOKEN="${OWNER_GIT_TOKEN}"
+              export GITHUB_TOKEN="${OWNER_GIT_TOKEN}"
               AUTHENTICATED_OWNER="${OWNER}"
             else
               echo "GitHub owner ${OWNER} already authenticated, reusing existing gh session"
@@ -773,6 +781,7 @@ jobs:
               fi
             fi
           done
+
       - name: Upload apt delivery
         if: needs.extract-collectors.outputs.apt_enabled == 'true'
         run: |
@@ -862,7 +871,7 @@ jobs:
           rm -f tmp_artifact_patterns
 
       - name: 'Upload bundle release packages contents'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: packages-release-${{ matrix.profile }}
           path: ./to_conan/packages.json
@@ -870,7 +879,7 @@ jobs:
 
       - name: 'Upload bundle delivery packages contents'
         if: needs.extract-collectors.outputs.deliverable == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: packages-delivery-${{ matrix.profile }}
           path: ./to_delivery/packages.json
@@ -891,7 +900,7 @@ jobs:
         password: ${{ secrets.REPOSITORY_TOKEN_REPOSITORY_NEXUS_VIXTECHNOLOGY_COM }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set safe git path
         run: |
@@ -901,7 +910,9 @@ jobs:
       - name: Configure conan
         uses: $/.github/actions/configure-conan
         with:
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
+          app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
       - name: Resolve Conan cache mode
         run: |
@@ -931,6 +942,7 @@ jobs:
           source-repo: ${{ inputs.source_repo }}
           source-run-id: ${{ inputs.source_run_id }}
           source-owner: ${{ inputs.source_owner }}
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
           profile: default
           cache-mode: ${{ env.CACHE_MODE }}
@@ -959,7 +971,7 @@ jobs:
         uses: $/.github/actions/build-bundle-docs
         
       - name: Upload bundle docs site
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: docs-default
           path: ./to_docs_site
@@ -999,8 +1011,9 @@ jobs:
         uses: $/.github/actions/gh-auth-owner
         with:
           owner: ${{ github.repository_owner }}
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
-          token-prefix: GIT_TOKEN_RELEASE
+          app-credential-prefix: GIT_TOKEN_RELEASE
 
       - name: Pull docs folder
         run: |
@@ -1050,14 +1063,16 @@ jobs:
     if: needs.extract-collectors.outputs.from_repository_url != needs.extract-collectors.outputs.conan_release_remote_url
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
-      - name: Authenticate gh for current repository owner
+      - name: Authenticate gh for current repository owner (release scope)
         uses: $/.github/actions/gh-auth-owner
         with:
           owner: ${{ github.repository_owner }}
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
-          token-prefix: GIT_TOKEN_RELEASE
+          app-credential-scope: release
+          app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
 
       - name: remove clone request if any
         id: finalize
@@ -1114,7 +1129,9 @@ jobs:
         uses: $/.github/actions/gh-auth-owner
         with:
           owner: ${{ env.OWNER }}
+          json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
+          app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
 
       - name: Check if repository ${{ matrix.collector }} exists
         run: |

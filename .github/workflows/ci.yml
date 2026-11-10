@@ -10,7 +10,7 @@ jobs:
   actionlint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Download actionlint
         id: get_actionlint
         run: bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
@@ -22,7 +22,7 @@ jobs:
   validate-contracts:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Validate workflow contracts
         run: bash .github/scripts/validate_workflow_contracts.sh
         shell: bash
