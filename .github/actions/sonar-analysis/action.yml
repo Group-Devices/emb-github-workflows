@@ -46,7 +46,7 @@ runs:
         SONAR_HOST_URL: https://sonarcloud.io
       with:
         args: >
-          --define sonar.cfamily.compile-commands=./compile_commands.json
+          --define sonar.cfamily.compile-commands="${{ steps.prepare.outputs.database }}"
           --define sonar.projectKey=${{ steps.prepare.outputs.project-key }}
           --define sonar.organization=${{ steps.prepare.outputs.organization }}
           ${{ steps.prepare.outputs.coverage-argument }}

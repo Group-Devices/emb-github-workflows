@@ -335,9 +335,10 @@ the existing LCOV report. With updated `build-helper` (`release/3.0`), this buil
 also provides `compile_commands.json` and native reports in `coverage/gcov/`.
 No test or coverage artifact needs to be transferred to another analysis job.
 
-The shared Sonar action reuses exactly one non-empty compilation database under
-`coverage/`, checks that it references existing checkout sources, and copies it
-to the checkout root for the scanner. GCOV reports are supplied through
+The shared Sonar action uses `coverage/compile_commands.json` directly. The
+analysis-only build writes `sonar-build/compile_commands.json`. These are explicit
+build-output conventions: no recursive discovery or database copy is needed.
+The scanner validates the database contents. GCOV reports are supplied through
 `sonar.cfamily.gcov.reportsPath`; no XML conversion is used. The reports must
 come from the compiler-matched gcov configured by `build-helper`.
 

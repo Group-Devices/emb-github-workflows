@@ -29,15 +29,18 @@ class SonarAnalysisTests(unittest.TestCase):
             GITHUB_STEP_SUMMARY=str(self.summary), SONAR_ORG_INPUT="",
             CONAN_CONTEXT_CONF_ARGS="", TEST_BUILD_DIRECTORY="coverage",
             PATH=str(self.tools) + os.pathsep + os.environ["PATH"])
-        # Model only Conan's build output; preparation and validation run unmodified.
+        # Fake the build output; execute the actual preparation shell.
+        database = self.root / "mock-database.json"
+        database.write_text(json.dumps([{"file": "source.cpp", "directory": str(self.checkout),
+                                         "command": "c++ -c source.cpp"}]))
+        self.environment["MOCK_DATABASE"] = str(database)
         conan = self.tools / "conan"
-        conan.write_text("""#!/usr/bin/env python3
-import json, os, pathlib, sys
-pathlib.Path('conan-arguments.json').write_text(json.dumps(sys.argv[1:]))
-folder = pathlib.Path(sys.argv[sys.argv.index('--output-folder') + 1])
-source = str(pathlib.Path('source.cpp').resolve())
-(folder / 'compile_commands.json').write_text(json.dumps([
-    {'file': source, 'directory': os.getcwd(), 'command': 'c++ -c ' + source}]))
+        conan.write_text("""#!/bin/bash
+set -eu
+printf '%s\\n' "$@" > conan-arguments.txt
+while [ "$1" != --output-folder ]; do shift; done
+mkdir -p "$2"
+cp "$MOCK_DATABASE" "$2/compile_commands.json"
 """)
         conan.chmod(0o755)
 
@@ -76,18 +79,20 @@ source = str(pathlib.Path('source.cpp').resolve())
         reports.mkdir()
         (reports / "example.gcov").write_text("        -:    0:Source:source.cpp\n        1:    1:int value() { return 1; }\n")
         self.run_prepare()
-        self.assertFalse((self.checkout / "conan-arguments.json").exists())
+        self.assertFalse((self.checkout / "conan-arguments.txt").exists())
         self.assertIn('sonar.cfamily.gcov.reportsPath="coverage/gcov"', self.output.read_text())
         self.assertIn("project-key=example_Package", self.output.read_text())
+        self.assertIn("database=coverage/compile_commands.json", self.output.read_text())
         self.assertIn("no additional compilation", self.summary.read_text())
 
     def test_no_tests_builds_analysis_only_without_dependency_builds(self):
         self.environment["TEST_BUILD_DIRECTORY"] = ""
         self.run_prepare()
-        arguments = json.loads((self.checkout / "conan-arguments.json").read_text())
+        arguments = (self.checkout / "conan-arguments.txt").read_text().splitlines()
         self.assertIn("--build=never", arguments)
         self.assertIn("tools.build:skip_test=True", arguments)
         self.assertIn("build_type=Release", arguments)
+        self.assertIn("database=sonar-build/compile_commands.json", self.output.read_text())
         self.assertNotIn("coverage-argument", self.output.read_text())
         self.assertIn("without coverage import", self.summary.read_text())
 
@@ -100,29 +105,19 @@ source = str(pathlib.Path('source.cpp').resolve())
     def test_old_test_build_without_database_falls_back(self):
         (self.checkout / "coverage").mkdir()
         self.run_prepare()
-        self.assertTrue((self.checkout / "conan-arguments.json").exists())
+        self.assertTrue((self.checkout / "conan-arguments.txt").exists())
 
     def test_test_database_without_reports_remains_usable(self):
         self.database()
         self.run_prepare()
-        self.assertFalse((self.checkout / "conan-arguments.json").exists())
+        self.assertFalse((self.checkout / "conan-arguments.txt").exists())
         self.assertNotIn("coverage-argument", self.output.read_text())
 
-    def test_empty_database_is_rejected(self):
-        self.database(entries=[])
-        self.run_prepare(expected=1)
-        self.assertFalse((self.checkout / "compile_commands.json").exists())
-
-    def test_ambiguous_database_is_rejected(self):
-        self.database()
-        self.database("coverage/other")
-        self.run_prepare(expected=1)
-
-    def test_cached_sources_outside_checkout_are_rejected(self):
-        outside = self.root / "cached.cpp"
-        outside.write_text("int cached;\n")
-        self.database(entries=[{"file": str(outside), "directory": str(self.root), "command": "c++"}])
-        self.run_prepare(expected=1)
+    def test_missing_analysis_database_is_reported(self):
+        self.environment["TEST_BUILD_DIRECTORY"] = ""
+        (self.tools / "conan").write_text("#!/bin/sh\nexit 0\n")
+        result = self.run_prepare(expected=1)
+        self.assertIn("Missing sonar-build/compile_commands.json", result.stdout)
 
     def test_explicit_organization_is_used(self):
         self.database()
