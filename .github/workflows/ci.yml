@@ -26,3 +26,10 @@ jobs:
       - name: Validate workflow contracts
         run: bash .github/scripts/validate_workflow_contracts.sh
         shell: bash
+
+  test-sonar-preparation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test local analysis preparation
+        run: python3 -m unittest discover -s .github/tests -v

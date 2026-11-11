@@ -1,0 +1,52 @@
+name: Analyze checkout with Sonar
+description: Reuse the native test build or build the checkout for static analysis only.
+
+inputs:
+  token:
+    description: Sonar token; analysis is skipped when absent.
+    required: false
+    default: ''
+  organization:
+    description: Sonar organization; defaults to the lower-case repository owner.
+    required: false
+    default: ''
+  test-build-directory:
+    description: Build directory produced by successful tests, relative to the checkout.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Check Sonar availability
+      id: availability
+      shell: bash
+      env:
+        SONAR_TOKEN: ${{ inputs.token }}
+      run: |
+        if [ -n "$SONAR_TOKEN" ]; then
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "::notice::SONAR_TOKEN is missing; skipping Sonar analysis"
+          echo "Sonar analysis skipped: SONAR_TOKEN is missing." >> "$GITHUB_STEP_SUMMARY"
+        fi
+    - name: Prepare analysis build and reports
+      id: prepare
+      if: steps.availability.outputs.enabled == 'true'
+      shell: bash
+      env:
+        TEST_BUILD_DIRECTORY: ${{ inputs.test-build-directory }}
+        SONAR_ORG_INPUT: ${{ inputs.organization }}
+      run: bash "$GITHUB_ACTION_PATH/prepare.sh"
+    - name: SonarCloud scan
+      if: steps.availability.outputs.enabled == 'true'
+      uses: SonarSource/sonarqube-scan-action@v8
+      env:
+        SONAR_TOKEN: ${{ inputs.token }}
+        SONAR_HOST_URL: https://sonarcloud.io
+      with:
+        args: >
+          --define sonar.cfamily.compile-commands=./compile_commands.json
+          --define sonar.projectKey=${{ steps.prepare.outputs.project-key }}
+          --define sonar.organization=${{ steps.prepare.outputs.organization }}
+          ${{ steps.prepare.outputs.coverage-argument }}
