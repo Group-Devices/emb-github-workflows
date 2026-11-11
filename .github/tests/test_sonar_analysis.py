@@ -92,7 +92,7 @@ cp "$MOCK_DATABASE" "$2/compile_commands.json"
         self.assertIn("--build=never", arguments)
         self.assertIn("tools.build:skip_test=True", arguments)
         self.assertIn("build_type=Release", arguments)
-        self.assertIn("database=sonar-build/compile_commands.json", self.output.read_text())
+        self.assertIn("database=coverage/compile_commands.json", self.output.read_text())
         self.assertNotIn("coverage-argument", self.output.read_text())
         self.assertIn("without coverage import", self.summary.read_text())
 
@@ -117,7 +117,7 @@ cp "$MOCK_DATABASE" "$2/compile_commands.json"
         self.environment["TEST_BUILD_DIRECTORY"] = ""
         (self.tools / "conan").write_text("#!/bin/sh\nexit 0\n")
         result = self.run_prepare(expected=1)
-        self.assertIn("Missing sonar-build/compile_commands.json", result.stdout)
+        self.assertIn("Missing coverage/compile_commands.json", result.stdout)
 
     def test_explicit_organization_is_used(self):
         self.database()

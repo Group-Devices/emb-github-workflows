@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+build_folder=${TEST_BUILD_DIRECTORY:-coverage}
 if [ -n "$TEST_BUILD_DIRECTORY" ] && [ -s "$TEST_BUILD_DIRECTORY/compile_commands.json" ]; then
-  build_folder=$TEST_BUILD_DIRECTORY
   echo "Sonar reuses the test build; no additional compilation." >> "$GITHUB_STEP_SUMMARY"
 else
-  build_folder=sonar-build
   # Build checkout sources with tests disabled; never rebuild dependencies.
   # shellcheck disable=SC2086 # The context supplies a sequence of -c options.
   conan build . -pr:h default $CONAN_CONTEXT_CONF_ARGS \
