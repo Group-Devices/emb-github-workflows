@@ -361,12 +361,6 @@ the compatibility fallback recompiling an older test build without a database.
 The job was renamed from `unit-tests` to `checks`; update required GitHub status
 check names if repository branch protection explicitly refers to the old name.
 
-Local preparation tests can be run without credentials:
-
-```sh
-python3 -m unittest discover -s .github/tests -v
-```
-
 ## Consumer Migration
 
 When moving a package, collector, or context repository to the reusable workflows on `release/v1.0`, the expected migration is:
