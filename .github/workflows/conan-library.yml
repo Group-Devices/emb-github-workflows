@@ -242,6 +242,7 @@ jobs:
           conan-context-path: ${{ env.CONAN_CONTEXT_PATH }}
 
       - id: resolve
+        name: Resolve build context
         shell: bash
         env:
           REQUESTED_PROFILES: ${{ inputs.conan-profiles != '' && inputs.conan-profiles || needs.generate-conan-context.outputs.build-profile-list }}
@@ -704,7 +705,7 @@ jobs:
       - collector-relevance
     if: inputs.build-missing == true && needs.collector-relevance.outputs.should-build != 'true'
     steps:
-      - run: echo "Changed package is not present in the collector dependency graph for any configured profile. Skipping collector rebuild and context delivery."
+      - run: echo "::notice::Changed package is not present in the collector dependency graph for any configured profile. Skipping collector rebuild and context delivery."
 
   resolve-rebuild-collectors:
     runs-on: ubuntu-latest
@@ -716,6 +717,7 @@ jobs:
       collectors-list: ${{ steps.resolve.outputs.collectors-list }}
     steps:
       - id: resolve
+        name: Resolve collector topology
         shell: bash
         env:
           COLLECTORS: ${{ needs.generate-conan-context.outputs.collectors-list }}
