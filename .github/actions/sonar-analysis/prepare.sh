@@ -20,7 +20,7 @@ fi
 printf 'database=%s/compile_commands.json\n' "$build_folder" >> "$GITHUB_OUTPUT"
 
 if [ -n "$TEST_BUILD_DIRECTORY" ] && compgen -G "$TEST_BUILD_DIRECTORY/gcov/*.gcov" >/dev/null; then
-  printf 'coverage-argument=--define sonar.cfamily.gcov.reportsPath="%s/gcov"\n' "$TEST_BUILD_DIRECTORY" >> "$GITHUB_OUTPUT"
+  printf 'coverage-argument=--define sonar.cfamily.gcov.reportsPath=%s/gcov\n' "$TEST_BUILD_DIRECTORY" >> "$GITHUB_OUTPUT"
   echo "Sonar GCOV coverage: $TEST_BUILD_DIRECTORY/gcov." >> "$GITHUB_STEP_SUMMARY"
 else
   if [ -n "$TEST_BUILD_DIRECTORY" ]; then
