@@ -157,6 +157,22 @@ jobs:
             find coverage/Testing/Temporary -name 'LastTest*' -type f -exec cat {} +
           fi
 
+      # Analyze before the result publisher creates a Python virtualenv in the checkout.
+      - name: Analyze checkout with Sonar
+        id: sonar
+        if: inputs.enable-quality-analysis
+        continue-on-error: true
+        uses: $/.github/actions/sonar-analysis
+        with:
+          token: ${{ secrets.SONAR_TOKEN }}
+          organization: ${{ inputs.sonar-organization }}
+          test-build-directory: ${{ steps.unit-tests.outcome == 'success' && 'coverage' || '' }}
+      - name: Report analysis failure
+        if: ${{ !cancelled() && steps.sonar.outcome == 'failure' }}
+        run: |
+          echo "::warning::Sonar analysis failed; see the analysis step logs"
+          echo "Sonar analysis failed; its result is unavailable. Package builds remain enabled." >> "$GITHUB_STEP_SUMMARY"
+
       # The non-Docker Linux publisher explicitly resolves `python3` from
       # PATH and creates its own virtual environment from it.  Use a complete,
       # current interpreter rather than the compiler image's system Python.
@@ -185,20 +201,6 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           artifact-name: code-coverage-report
           update-comment: true
-      - name: Analyze checkout with Sonar
-        id: sonar
-        if: inputs.enable-quality-analysis
-        continue-on-error: true
-        uses: $/.github/actions/sonar-analysis
-        with:
-          token: ${{ secrets.SONAR_TOKEN }}
-          organization: ${{ inputs.sonar-organization }}
-          test-build-directory: ${{ steps.unit-tests.outcome == 'success' && 'coverage' || '' }}
-      - name: Report analysis failure
-        if: ${{ !cancelled() && steps.sonar.outcome == 'failure' }}
-        run: |
-          echo "::warning::Sonar analysis failed; see the analysis step logs"
-          echo "Sonar analysis failed; its result is unavailable. Package builds remain enabled." >> "$GITHUB_STEP_SUMMARY"
   collector-relevance:
     runs-on: eks-runner-linux-x64-medium
     if: always()
