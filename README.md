@@ -312,22 +312,54 @@ Legacy compatibility is still kept for now:
 
 New integrations should use only `source_build_context`.
 
-### SonarCloud analysis
+### Tests and SonarCloud analysis
 
-If `SONAR_TOKEN` is missing, all Sonar steps are skipped with a notice; the
-normal package build and publishing continue.
+`conan-library.yml` runs native verification in the `checks` job, outside the
+profile matrix used for package build/upload. Existing caller inputs are unchanged:
 
-When `enable-quality-analysis` is enabled for a non-fast build, the `default`
-profile runs an additional `conan build` against the checked-out sources after
-the normal package build. It reuses the profile, context configuration and
-lockfile, and enables CMake compilation database generation.
+| `run-unit-tests` | `enable-quality-analysis` | Verification |
+| --- | --- | --- |
+| false | false | No checks job |
+| true | false | Run `test.sh` when present |
+| false | true | Build the checkout for static analysis, then run Sonar |
+| true | true | Run `test.sh` when present, then reuse its build for Sonar |
 
-The analysis build writes its output to a fresh runner temporary directory.
-The workflow requires exactly one non-empty `compile_commands.json` referencing
-existing checkout sources, then copies it to the checkout for SonarCloud.
-The scanner and compilation database therefore reference the same source paths;
-a database from `conan create` must not be used to scan the checkout because
-that command builds a separate source copy in Conan's cache.
+A package without unit tests does not need a dummy `test.sh`. A missing script
+is reported as skipped; a failing script remains a test failure. Fast builds
+continue to skip verification. Packaging jobs retain their existing test-success
+condition, updated to reference `checks`.
+
+The native test script convention remains `coverage/` for build output,
+`coverage/junit-results.xml` for test results, and `coverage/coverage.info` for
+the existing LCOV report. With updated `build-helper` (`release/3.0`), this build
+also provides `compile_commands.json` and native reports in `coverage/gcov/`.
+No test or coverage artifact needs to be transferred to another analysis job.
+
+Tests and static analysis share the `coverage/` build directory. The Sonar action
+uses `coverage/compile_commands.json` directly in both cases; no recursive
+discovery or database copy is needed.
+The scanner validates the database contents. GCOV reports are supplied through
+`sonar.cfamily.gcov.reportsPath`; no XML conversion is used. The reports must
+come from the compiler-matched gcov configured by `build-helper`.
+
+If tests did not run, or their script did not produce a compilation database,
+Sonar gets a separate Release build of the checkout with tests disabled and
+`CMAKE_EXPORT_COMPILE_COMMANDS=ON`. This build uses the native `default` profile
+and `--build=never`: it cannot rebuild missing dependencies. It does not use
+Conan's cached source copy. Package-specific source/test classification can be
+set in `sonar-project.properties`.
+
+Missing `SONAR_TOKEN` skips analysis with a notice. Missing GCOV reports are
+reported explicitly and permit static analysis without coverage import. Scanner
+or analysis-preparation failure is advisory, is shown in the job summary, and
+does not turn successful tests into a packaging failure. An uploaded analysis
+is not a guarantee that the server-side Quality Gate passed; the Sonar check
+remains separate. No Quality Gate or quality profile is modified by this workflow.
+
+Deploy the `build-helper` update before enabling this workflow change to avoid
+the compatibility fallback recompiling an older test build without a database.
+The job was renamed from `unit-tests` to `checks`; update required GitHub status
+check names if repository branch protection explicitly refers to the old name.
 
 ## Consumer Migration
 
