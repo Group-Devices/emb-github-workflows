@@ -19,6 +19,22 @@ if [ ! -s "$build_folder/compile_commands.json" ]; then
 fi
 printf 'database=%s/compile_commands.json\n' "$build_folder" >> "$GITHUB_OUTPUT"
 
+# Keep defaults below the repository's properties in precedence. Passing source
+# paths with --define would prevent sonar-project.properties from overriding them.
+settings=$(mktemp "$RUNNER_TEMP/sonar-settings.XXXXXX.properties")
+{
+  printf 'sonar.sources=src\n'
+  if [ -d tests ]; then
+    printf 'sonar.tests=tests\n'
+  fi
+  if [ -f sonar-project.properties ]; then
+    printf '\n# Repository overrides\n'
+    cat sonar-project.properties
+    printf '\n'
+  fi
+} > "$settings"
+printf 'settings=%s\n' "$settings" >> "$GITHUB_OUTPUT"
+
 if [ -n "$TEST_BUILD_DIRECTORY" ] && compgen -G "$TEST_BUILD_DIRECTORY/gcov/*.gcov" >/dev/null; then
   printf 'coverage-argument=--define sonar.cfamily.gcov.reportsPath=%s/gcov\n' "$TEST_BUILD_DIRECTORY" >> "$GITHUB_OUTPUT"
   echo "Sonar GCOV coverage: $TEST_BUILD_DIRECTORY/gcov." >> "$GITHUB_STEP_SUMMARY"

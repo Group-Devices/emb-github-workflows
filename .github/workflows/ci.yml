@@ -23,6 +23,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Verify Sonar analysis preparation
+        run: python3 .github/scripts/test_sonar_analysis.py
+        shell: bash
       - name: Validate workflow contracts
         run: bash .github/scripts/validate_workflow_contracts.sh
         shell: bash

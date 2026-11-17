@@ -346,8 +346,32 @@ If tests did not run, or their script did not produce a compilation database,
 Sonar gets a separate Release build of the checkout with tests disabled and
 `CMAKE_EXPORT_COMPILE_COMMANDS=ON`. This build uses the native `default` profile
 and `--build=never`: it cannot rebuild missing dependencies. It does not use
-Conan's cached source copy. Package-specific source/test classification can be
-set in `sonar-project.properties`.
+Conan's cached source copy.
+
+Analysis defaults to `sonar.sources=src` and, when the directory exists,
+`sonar.tests=tests`. Repositories without `src/` must define their production
+directories explicitly. Add the standard `sonar-project.properties` file at the
+repository root to override either path or add other scanner settings:
+
+```properties
+# Example for a library with public headers and a different test directory.
+sonar.sources=lib,include
+sonar.tests=unit-tests
+```
+
+The action writes a temporary properties file with the defaults followed by the
+repository file and passes it through the scanner's `project.settings` option.
+The repository file is left unchanged, and Sonar parses its normal properties
+syntax, including continued lines. Repository properties take precedence over
+the layout defaults; project identity and build/report paths are still supplied
+by the workflow as before. Source/test paths are comma-separated literal paths,
+relative to the checkout, not glob patterns. A missing `tests/` directory is not
+passed to the scanner; an alternative test directory can be configured explicitly.
+
+The CFamily analyzer does not currently support test classification through
+`sonar.tests`. Keep C/C++ test directories outside `sonar.sources`; configuring
+`sonar.tests` alone does not make them production-code exclusions. See the
+[CFamily test-file documentation](https://docs.sonarsource.com/sonarqube-cloud/analyzing-source-code/languages/c-family/customizing-the-analysis#analyzing-test-files).
 
 Missing `SONAR_TOKEN` skips analysis with a notice. Missing GCOV reports are
 reported explicitly and permit static analysis without coverage import. Scanner
