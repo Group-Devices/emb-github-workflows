@@ -47,6 +47,7 @@ class SonarPreparationTests(unittest.TestCase):
         self.assertEqual(outputs["coverage-argument"],
                          "--define sonar.cfamily.gcov.reportsPath=coverage/gcov")
         self.assertEqual(outputs["project-key"], "group-devices_example")
+        self.assertEqual(outputs["project-name"], "example")
         self.assertFalse((self.root / "sonar-project.properties").exists())
 
     def test_repository_properties_override_defaults_without_rewriting_syntax(self):

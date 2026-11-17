@@ -46,4 +46,6 @@ else
 fi
 organization=${SONAR_ORG_INPUT:-$GITHUB_REPOSITORY_OWNER}
 organization=${organization,,}
-printf 'organization=%s\nproject-key=%s_%s\n' "$organization" "$organization" "${GITHUB_REPOSITORY#*/}" >> "$GITHUB_OUTPUT"
+repository_name=${GITHUB_REPOSITORY#*/}
+printf 'organization=%s\nproject-key=%s_%s\nproject-name=%s\n' \
+  "$organization" "$organization" "$repository_name" "$repository_name" >> "$GITHUB_OUTPUT"
