@@ -53,11 +53,6 @@ on:
         required: false
         type: string
         default: ''
-      docker-project-images:
-        description: 'Dispatch the collector-owned project image workflow'
-        required: false
-        type: boolean
-        default: false
       conan-profiles:
         description: 'Conan profile as json string'
         required: false
@@ -614,7 +609,7 @@ jobs:
             echo "profiles=[]" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [ '${{ inputs.docker-project-images }}' != true ] && yq -e '.docker.framework != null' "$CONAN_CONTEXT_PATH" >/dev/null; then
+          if yq -e '.docker.framework != null' "$CONAN_CONTEXT_PATH" >/dev/null; then
             framework_collector=$(yq -r '.docker.framework.collector // ""' "$CONAN_CONTEXT_PATH")
             if [ "$framework_collector" != "${GITHUB_REPOSITORY##*/}" ] &&
                [ "$framework_collector" != "$GITHUB_REPOSITORY" ]; then
@@ -670,10 +665,7 @@ jobs:
           set -euo pipefail
           context="${CONAN_CONTEXT_PATH}"
           bundle=$(yq -r '.bundle // ""' "$context")
-          if [ '${{ inputs.docker-project-images }}' = true ]; then
-            workflow="build-project-images.yml"
-            repository="$GITHUB_REPOSITORY"
-          elif yq -e '.docker.framework' "$context" >/dev/null; then
+          if yq -e '.docker.framework' "$context" >/dev/null; then
             workflow="build-framework.yml"
             repository="$bundle"
           elif yq -e '.docker.project' "$context" >/dev/null; then
