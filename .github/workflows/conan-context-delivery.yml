@@ -1013,7 +1013,8 @@ jobs:
           owner: ${{ github.repository_owner }}
           json-variables: ${{ toJson(vars) }}
           json-secrets: ${{ toJson(secrets) }}
-          app-credential-prefix: GIT_TOKEN_RELEASE
+          app-credential-scope: release
+          app-credential-prefix: ${{ vars.GIT_GITHUB_APP_CREDENTIAL_PREFIX || 'GIT_GITHUB_APP' }}
 
       - name: Pull docs folder
         run: |
